@@ -6,6 +6,7 @@ import { Header } from "./components/Header";
 import { MarketingContent } from "./components/MarketingContent";
 import { ReportDialog } from "./components/ReportDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
+import CloudBackdrop from "./components/CloudBackdrop";
 import { TasksPanel } from "./components/TasksPanel";
 import { TimerPanel } from "./components/TimerPanel";
 
@@ -238,6 +239,7 @@ export function App() {
 
   return <div className={`app-shell theme-${shellTheme} ${darkRunning ? "dark-running" : ""}`}>
     <div className="focus-area">
+      <CloudBackdrop />
       <div className="app-container">
         <Header onReport={() => setDialog("report")} onSettings={() => setDialog("settings")} onSignIn={() => setDialog("signin")} />
         <main className="focus-main">
