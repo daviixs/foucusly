@@ -1,0 +1,30 @@
+import type { BootstrapData, ReportData, ReportPeriod, Settings, Task, TaskTemplate, TimerState } from "@pomofocus/contracts";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api${path}`, {
+    ...init,
+    headers: { "content-type": "application/json", ...init?.headers }
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? `Request failed (${response.status})`);
+  }
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
+}
+
+export const api = {
+  bootstrap: () => request<BootstrapData>("/bootstrap"),
+  saveSettings: (settings: Settings) => request<Settings>("/settings", { method: "PUT", body: JSON.stringify(settings) }),
+  saveTimer: (timer: TimerState) => request<TimerState>("/timer", { method: "PUT", body: JSON.stringify(timer) }),
+  createTask: (task: Pick<Task, "title" | "note" | "estimatePomos">) => request<Task>("/tasks", { method: "POST", body: JSON.stringify(task) }),
+  updateTask: (id: string, patch: Partial<Task>) => request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: "DELETE" }),
+  taskAction: (action: "clear-finished" | "clear-all" | "clear-pomos" | "toggle-hidden") => request<BootstrapData>(`/tasks/actions/${action}`, { method: "POST" }),
+  createTemplate: (template: Pick<TaskTemplate, "name" | "title" | "note" | "estimatePomos">) => request<TaskTemplate>("/templates", { method: "POST", body: JSON.stringify(template) }),
+  useTemplate: (id: string) => request<Task>(`/templates/${id}/use`, { method: "POST" }),
+  deleteTemplate: (id: string) => request<void>(`/templates/${id}`, { method: "DELETE" }),
+  completeSession: (session: { id: string; mode: TimerState["mode"]; startedAt: string; endedAt: string; durationSeconds: number; taskId: string | null }) => request<{ saved: true; duplicate: boolean }>("/sessions", { method: "POST", body: JSON.stringify(session) }),
+  report: (period: ReportPeriod, date: string) => request<ReportData>(`/reports?period=${period}&date=${date}`)
+};
+
