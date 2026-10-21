@@ -1,0 +1,18 @@
+{
+  "name": "pomofocus-clone",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/web", "apps/api", "packages/contracts"],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "build": "npm run build --workspace packages/contracts && npm run build --workspace apps/api && npm run build --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace packages/contracts && npm run typecheck --workspace apps/api && npm run typecheck --workspace apps/web",
+    "start": "npm --workspace apps/api run start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3"
+  }
+}
