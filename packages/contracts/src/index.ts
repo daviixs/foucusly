@@ -1,0 +1,122 @@
+export type TimerMode = "pomodoro" | "shortBreak" | "longBreak";
+export type ThemeColor = "red" | "teal" | "blue" | "green" | "purple";
+export type ReportPeriod = "day" | "week" | "month" | "year";
+
+export interface Task {
+  id: string;
+  title: string;
+  note: string;
+  estimatePomos: number;
+  completedPomos: number;
+  completed: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface TaskTemplate {
+  id: string;
+  name: string;
+  title: string;
+  note: string;
+  estimatePomos: number;
+  createdAt: string;
+}
+
+export interface Settings {
+  pomodoroMinutes: number;
+  shortBreakMinutes: number;
+  longBreakMinutes: number;
+  longBreakInterval: number;
+  autoStartBreaks: boolean;
+  autoStartPomodoros: boolean;
+  autoCheckTasks: boolean;
+  checkToBottom: boolean;
+  alarmSound: string;
+  alarmVolume: number;
+  alarmRepeat: number;
+  focusSound: string;
+  focusVolume: number;
+  themeColor: ThemeColor;
+  hourFormat: "12-hour" | "24-hour";
+  darkModeWhenRunning: boolean;
+  notificationReminderMinutes: number;
+  weekStartsOn: 0 | 1;
+  tasksVisible: boolean;
+}
+
+export interface TimerState {
+  mode: TimerMode;
+  remainingSeconds: number;
+  running: boolean;
+  endsAt: number | null;
+  cyclePomos: number;
+  activeTaskId: string | null;
+  currentSessionId: string | null;
+  sessionStartedAt: string | null;
+}
+
+export interface SessionRecord {
+  id: string;
+  mode: TimerMode;
+  startedAt: string;
+  endedAt: string;
+  durationSeconds: number;
+  taskId: string | null;
+}
+
+export interface BootstrapData {
+  tasks: Task[];
+  templates: TaskTemplate[];
+  settings: Settings;
+  timer: TimerState;
+}
+
+export interface DailyReport {
+  date: string;
+  focusSeconds: number;
+  sessions: number;
+}
+
+export interface ReportData {
+  period: ReportPeriod;
+  startDate: string;
+  endDate: string;
+  focusSeconds: number;
+  focusSessions: number;
+  activeDays: number;
+  currentStreak: number;
+  daily: DailyReport[];
+  sessions: SessionRecord[];
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  pomodoroMinutes: 25,
+  shortBreakMinutes: 5,
+  longBreakMinutes: 15,
+  longBreakInterval: 4,
+  autoStartBreaks: false,
+  autoStartPomodoros: false,
+  autoCheckTasks: false,
+  checkToBottom: false,
+  alarmSound: "Kitchen",
+  alarmVolume: 50,
+  alarmRepeat: 1,
+  focusSound: "None",
+  focusVolume: 50,
+  themeColor: "red",
+  hourFormat: "24-hour",
+  darkModeWhenRunning: false,
+  notificationReminderMinutes: 0,
+  weekStartsOn: 1,
+  tasksVisible: true
+};
+
+export function durationForMode(settings: Settings, mode: TimerMode): number {
+  const minutes = mode === "pomodoro"
+    ? settings.pomodoroMinutes
+    : mode === "shortBreak"
+      ? settings.shortBreakMinutes
+      : settings.longBreakMinutes;
+  return Math.max(1, minutes) * 60;
+}
+
