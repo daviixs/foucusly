@@ -11,9 +11,9 @@ export function Header({ onReport, onSettings, onSignIn }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
     <header className="topbar">
-      <a className="brand" href="/" aria-label="Pomofocus home">
+      <a className="brand" href="/" aria-label="Foucusly home">
         <span className="brand-mark"><CheckCircle size={21} weight="fill" /></span>
-        <span>Pomofocus</span>
+        <span>Foucusly</span>
       </a>
       <nav className="top-actions" aria-label="Main navigation">
         <button className="top-action desktop-action" onClick={onReport}><ChartLineUp size={16} /> <span>Report</span></button>

@@ -1,5 +1,5 @@
 {
-  "name": "pomofocus-clone",
+  "name": "foucusly",
   "private": true,
   "type": "module",
   "workspaces": ["apps/web", "apps/api", "packages/contracts"],

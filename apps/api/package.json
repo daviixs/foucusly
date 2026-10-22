@@ -1,5 +1,5 @@
 {
-  "name": "@pomofocus/api",
+  "name": "@foucusly/api",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@pomofocus/contracts": "1.0.0",
+    "@foucusly/contracts": "1.0.0",
     "better-sqlite3": "^12.4.1",
     "fastify": "^5.6.2",
     "zod": "^4.1.12"

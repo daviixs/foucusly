@@ -1,5 +1,5 @@
 import { Pause, Play } from "@phosphor-icons/react";
-import type { TimerMode } from "@pomofocus/contracts";
+import type { TimerMode } from "@foucusly/contracts";
 
 const modes: Array<{ key: TimerMode; label: string }> = [
   { key: "pomodoro", label: "Pomodoro" },
