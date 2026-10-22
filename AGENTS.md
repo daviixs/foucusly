@@ -116,3 +116,11 @@ Before handing off a change, run `npm run typecheck`. Run `npm run build` for ch
 | `PUSH_POLL_INTERVAL_MS` | Push reminder scheduler interval | `15000` |
 
 For production, build all workspaces, run the API, serve `apps/web/dist` from a static server, and proxy `/api` to the API process. Back up the SQLite database as application data; it contains all local profiles, timers, sessions, and push configuration.
+
+## Delivery pipeline
+
+- Pull requests run dependency installation, type checking, API tests, and production builds.
+- A merge to `main` publishes immutable API and web images to GHCR, tagged with the commit SHA, then deploys both Coolify applications.
+- Production is successful only when `/api/health`, `/api/version`, `/health`, and `/version.json` report a healthy deployment of the expected SHA.
+- If verification fails, the workflow restores the Git `production` release on both applications. Image rollback never rolls back SQLite data.
+- Do not deploy mutable `latest` images or change Coolify image tags manually. Follow [docs/ci-cd.md](docs/ci-cd.md) for configuration, recovery, and the required persistent SQLite volume.

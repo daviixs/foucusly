@@ -73,6 +73,26 @@ O frontend React mantém a experiência ao vivo do timer e se comunica com uma A
 
 Para o mapa de componentes, modelo de dados, ciclo do timer, notificações e limites operacionais, veja [architecture.md](architecture.md). Para instruções de contribuição orientadas a agentes, veja [AGENTS.md](AGENTS.md).
 
+## Entrega contínua
+
+```mermaid
+flowchart LR
+    PR["Pull Request"] --> CI["GitHub Actions<br/>typecheck · testes · build"]
+    CI -->|"merge em main"| GHCR["GHCR<br/>imagens sha-commit"]
+    GHCR --> API["Coolify API"]
+    GHCR --> WEB["Coolify Web"]
+    API --> Smoke["Smoke tests<br/>health + versão"]
+    WEB --> Smoke
+    Smoke -->|"SHA esperado"| Production["Produção<br/>tag production"]
+    Smoke -->|"falha"| Rollback["Restaurar última<br/>release saudável"]
+    Rollback --> API
+    Rollback --> WEB
+```
+
+Cada release usa imagens imutáveis identificadas pelo SHA do commit. O deploy só é considerado concluído quando API e web servem a versão esperada; uma falha restaura a última release saudável, sem alterar os dados persistentes em SQLite.
+
+Para empacotamento, CI/CD, deploy no Coolify e recuperação de releases, veja o [guia de CI/CD](docs/ci-cd.md).
+
 ## Comece em minutos
 
 **Pré-requisito:** Node.js compatível com as dependências do projeto e npm.
