@@ -1,10 +1,13 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Check, DotsThreeVertical, LockKey, Minus, NotePencil, Plus, PlusCircle, Trash, X } from "@phosphor-icons/react";
-import type { Task, TaskTemplate } from "@pomofocus/contracts";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Check, DotsThreeVertical, Folder, LockKey, Minus, NotePencil, Plus, PlusCircle, Trash, X } from "@phosphor-icons/react";
+import type { Project, Task, TaskTemplate } from "@foucusly/contracts";
+import { ProjectPicker } from "./ProjectPicker";
+import { ProjectManagerDialog } from "./ProjectManagerDialog";
 
-type TaskDraft = Pick<Task, "title" | "note" | "estimatePomos">;
+type TaskDraft = Pick<Task, "title" | "note" | "estimatePomos" | "projectId">;
 interface TasksPanelProps {
   tasks: Task[];
+  projects: Project[];
   templates: TaskTemplate[];
   activeTaskId: string | null;
   visible: boolean;
@@ -17,29 +20,35 @@ interface TasksPanelProps {
   onAction: (action: "clear-finished" | "clear-all" | "clear-pomos" | "toggle-hidden") => Promise<void>;
   onSelect: (id: string) => void;
   onToast: (message: string) => void;
+  onCreateProject: (name: string) => Promise<Project>;
+  onRenameProject: (id: string, name: string) => Promise<void>;
+  onArchiveProject: (id: string) => Promise<void>;
 }
 
-function TaskEditor({ initial, edit, canTemplate, onSave, onCancel, onTemplate }: {
+function TaskEditor({ initial, edit, canTemplate, projects, onSave, onCancel, onTemplate, onManageProjects }: {
   initial?: Task;
   edit?: boolean;
   canTemplate: boolean;
+  projects: Project[];
   onSave: (draft: TaskDraft) => Promise<void>;
   onCancel: () => void;
   onTemplate: (draft: TaskDraft, name: string) => Promise<void>;
+  onManageProjects: (onCreated?: (project: Project) => void) => void;
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
   const [estimate, setEstimate] = useState(initial?.estimatePomos ?? 1);
+  const [projectId, setProjectId] = useState(initial?.projectId ?? null);
   const [noteOpen, setNoteOpen] = useState(Boolean(initial?.note));
   const [templateName, setTemplateName] = useState("");
   const [templateOpen, setTemplateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const draft = { title: title.trim(), note, estimatePomos: estimate };
+  const draft = { title: title.trim(), note, estimatePomos: estimate, projectId };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!draft.title || busy) return;
     setBusy(true);
-    try { await onSave(draft); if (!edit) { setTitle(""); setNote(""); setEstimate(1); setNoteOpen(false); onCancel(); } }
+    try { await onSave(draft); if (!edit) { setTitle(""); setNote(""); setEstimate(1); setProjectId(null); setNoteOpen(false); onCancel(); } }
     finally { setBusy(false); }
   };
   return <form className="task-editor" onSubmit={submit}>
@@ -53,8 +62,8 @@ function TaskEditor({ initial, edit, canTemplate, onSave, onCancel, onTemplate }
     {templateOpen && <input className="template-name-input" value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="Template name" aria-label="Template name" />}
     <div className="editor-options">
       <button type="button" className="text-option" onClick={() => setNoteOpen(!noteOpen)}>{noteOpen ? <X size={15} /> : <NotePencil size={15} />} {noteOpen ? "Remove note" : "+ Add Note"}</button>
-      <button type="button" className="text-option locked" onClick={() => window.dispatchEvent(new CustomEvent("pomofocus-toast", { detail: "Projects are available with Pomofocus Premium." }))}><span>+ Add Project</span><LockKey size={13} /></button>
     </div>
+    <ProjectPicker projects={projects} value={projectId} onChange={setProjectId} onManage={() => onManageProjects((project) => setProjectId(project.id))} />
     <div className="editor-bottom">
       <div className="editor-secondary">
         {canTemplate && !edit && <button type="button" className="text-option" onClick={() => setTemplateOpen(!templateOpen)}>Save as template</button>}
@@ -68,17 +77,19 @@ function TaskEditor({ initial, edit, canTemplate, onSave, onCancel, onTemplate }
   </form>;
 }
 
-function TaskRow({ task, active, onSelect, onUpdate, onDelete }: {
-  task: Task; active: boolean; onSelect: () => void; onUpdate: (patch: Partial<Task>) => void; onDelete: () => void;
+function TaskRow({ task, active, projects, onSelect, onUpdate, onDelete, onManageProjects }: {
+  task: Task; active: boolean; projects: Project[]; onSelect: () => void; onUpdate: (patch: Partial<Task>) => void; onDelete: () => void;
+  onManageProjects: (onCreated?: (project: Project) => void) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [menu, setMenu] = useState(false);
-  if (editing) return <TaskEditor edit initial={task} canTemplate={false} onSave={async (draft) => { await onUpdate(draft); setEditing(false); }} onCancel={() => setEditing(false)} onTemplate={async () => {}} />;
+  if (editing) return <TaskEditor edit initial={task} canTemplate={false} projects={projects} onSave={async (draft) => { await onUpdate(draft); setEditing(false); }} onCancel={() => setEditing(false)} onTemplate={async () => {}} onManageProjects={onManageProjects} />;
   return <article className={`task-row ${active ? "task-active" : ""} ${task.completed ? "task-completed" : ""}`} onClick={onSelect}>
     <button className={`task-check ${task.completed ? "checked" : ""}`} aria-label={task.completed ? "Mark task incomplete" : "Mark task complete"} onClick={(event) => { event.stopPropagation(); onUpdate({ completed: !task.completed }); }}>
       {task.completed && <Check size={13} weight="bold" />}
     </button>
     <div className="task-copy"><button className="task-name" onClick={onSelect}>{task.title}</button>
+      {task.projectId && <span className="task-project-label">{projects.find((project) => project.id === task.projectId)?.name ?? "Archived project"}</span>}
       {task.note && <p className="task-note-preview">{task.note}</p>}
       <span className="task-progress">{task.completedPomos} / {task.estimatePomos}</span>
     </div>
@@ -100,10 +111,16 @@ export function TasksPanel(props: TasksPanelProps) {
   const [templateMenu, setTemplateMenu] = useState(false);
   const [overflow, setOverflow] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showProjects, setShowProjects] = useState(false);
+  const projectCreatedCallback = useRef<((project: Project) => void) | undefined>(undefined);
+  const openProjectManager = (onCreated?: (project: Project) => void) => {
+    projectCreatedCallback.current = onCreated;
+    setShowProjects(true);
+  };
   useEffect(() => {
     const openEditor = () => setEditing(true);
-    window.addEventListener("pomofocus-add-task", openEditor);
-    return () => window.removeEventListener("pomofocus-add-task", openEditor);
+    window.addEventListener("foucusly-add-task", openEditor);
+    return () => window.removeEventListener("foucusly-add-task", openEditor);
   }, []);
   const tasks = [...props.tasks].sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
   const completed = tasks.filter((task) => task.completed).length;
@@ -125,6 +142,7 @@ export function TasksPanel(props: TasksPanelProps) {
           <button onClick={() => { setTemplateMenu(!templateMenu); }}><Plus size={15} /> Use Template</button>
           {templateMenu && <div className="template-list">{props.templates.length ? props.templates.map((template) => <button key={template.id} onClick={() => { setOverflow(false); setTemplateMenu(false); void props.onUseTemplate(template.id); }}>{template.name}<span>{template.estimatePomos} pomodoros</span></button>) : <p>No templates saved yet.</p>}</div>}
           <button onClick={() => { setOverflow(false); setShowImport(true); }}><span className="menu-icon"><Plus size={15} /></span> Import from Todoist <LockKey size={13} className="menu-lock" /></button>
+          <button onClick={() => { setOverflow(false); setShowProjects(true); }}><Folder size={15} /> Manage projects</button>
           <button onClick={() => { setOverflow(false); void props.onAction("clear-pomos"); }}><Trash size={15} /> Clear act pomodoros</button>
           <button onClick={() => { setOverflow(false); void props.onAction("toggle-hidden"); }}><span className="menu-icon"><Plus size={15} /></span> {props.visible ? "Hide tasks" : "Show tasks"}</button>
           <button className="danger-item" onClick={() => { setOverflow(false); void props.onAction("clear-all"); }}><Trash size={15} /> Clear all tasks</button>
@@ -134,14 +152,15 @@ export function TasksPanel(props: TasksPanelProps) {
     {tasks.length > 0 && <div className="tasks-progress"><span style={{ width: `${(completed / tasks.length) * 100}%` }} /></div>}
     {props.visible && <>
       <div className="task-list">
-        {tasks.map((task, index) => <TaskRow key={task.id} task={task} active={task.id === props.activeTaskId} onSelect={() => props.onSelect(task.id)} onUpdate={(patch) => void props.onUpdate(task.id, patch)} onDelete={() => void props.onDelete(task.id)} />)}
+        {tasks.map((task) => <TaskRow key={task.id} task={task} projects={props.projects} active={task.id === props.activeTaskId} onSelect={() => props.onSelect(task.id)} onUpdate={(patch) => void props.onUpdate(task.id, patch)} onDelete={() => void props.onDelete(task.id)} onManageProjects={openProjectManager} />)}
       </div>
-      {editing ? <TaskEditor canTemplate={props.templates.length < 3} onSave={props.onCreate} onCancel={() => setEditing(false)} onTemplate={props.onCreateTemplate} /> : <button className="add-task-button" onClick={() => setEditing(true)}><PlusCircle size={22} weight="fill" /> <span>Add Task</span><kbd>T</kbd></button>}
+      {editing ? <TaskEditor canTemplate={props.templates.length < 3} projects={props.projects} onSave={props.onCreate} onCancel={() => setEditing(false)} onTemplate={props.onCreateTemplate} onManageProjects={openProjectManager} /> : <button className="add-task-button" onClick={() => setEditing(true)}><PlusCircle size={22} weight="fill" /> <span>Add Task</span><kbd>T</kbd></button>}
       {tasks.length > 0 && <div className="finish-estimate">Pomos: {tasks[activeIndex]?.completedPomos ?? 0}/{tasks[activeIndex]?.estimatePomos ?? 0}<span>Finish At: {finishAt} ({(finishMinutes / 60).toFixed(1)}h)</span></div>}
       {tasks.length === 0 && <div className="empty-tasks"><span className="empty-spark"><Plus size={17} /></span><p>You've finished all your tasks for today</p><span className="party-mark">✳</span></div>}
     </>}
     {showImport && <div className="popover-backdrop" onClick={() => setShowImport(false)}><section className="small-dialog" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-      <button className="dialog-close" aria-label="Close" onClick={() => setShowImport(false)}><X size={20} /></button><div className="dialog-lock"><LockKey size={22} /></div><h2>Todoist integration</h2><p>Connect Todoist to bring your tasks into Pomofocus.</p><button className="button-dark full-button" onClick={() => { setShowImport(false); props.onToast("Todoist integration is a Premium feature."); }}>Connect Todoist</button>
+      <button className="dialog-close" aria-label="Close" onClick={() => setShowImport(false)}><X size={20} /></button><div className="dialog-lock"><LockKey size={22} /></div><h2>Todoist integration</h2><p>Connect Todoist to bring your tasks into Foucusly.</p><button className="button-dark full-button" onClick={() => { setShowImport(false); props.onToast("Todoist integration is a Premium feature."); }}>Connect Todoist</button>
     </section></div>}
+    {showProjects && <ProjectManagerDialog projects={props.projects} onCreate={props.onCreateProject} onRename={props.onRenameProject} onArchive={props.onArchiveProject} onCreated={(project) => projectCreatedCallback.current?.(project)} onClose={() => { setShowProjects(false); projectCreatedCallback.current = undefined; }} />}
   </section>;
 }

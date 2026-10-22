@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwise, X } from "@phosphor-icons/react";
-import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Settings, type Task, type TaskTemplate, type TimerMode, type TimerState } from "@pomofocus/contracts";
+import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Settings, type Task, type TaskTemplate, type TimerMode, type TimerState } from "@foucusly/contracts";
 import { api } from "./api";
 import { Header } from "./components/Header";
-import { MarketingContent } from "./components/MarketingContent";
 import { ReportDialog } from "./components/ReportDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import CloudBackdrop from "./components/CloudBackdrop";
@@ -12,7 +11,8 @@ import { TasksPanel } from "./components/TasksPanel";
 import { TimerPanel } from "./components/TimerPanel";
 
 const freshTimer = (settings: Settings, mode: TimerMode, activeTaskId: string | null, cyclePomos: number): TimerState => ({
-  mode, remainingSeconds: durationForMode(settings, mode), running: false, endsAt: null, cyclePomos, activeTaskId, currentSessionId: null, sessionStartedAt: null
+  mode, remainingSeconds: durationForMode(settings, mode), running: false, endsAt: null, cyclePomos, activeTaskId,
+  currentSessionId: null, sessionStartedAt: null, currentSessionTaskId: null, currentSessionTaskTitle: null, currentSessionProjectId: null
 });
 
 export function App() {
@@ -33,8 +33,8 @@ export function App() {
 
   useEffect(() => {
     const handler = (event: Event) => notify((event as CustomEvent<string>).detail);
-    window.addEventListener("pomofocus-toast", handler);
-    return () => window.removeEventListener("pomofocus-toast", handler);
+    window.addEventListener("foucusly-toast", handler);
+    return () => window.removeEventListener("foucusly-toast", handler);
   }, [notify]);
 
   const loadData = useCallback(async () => {
@@ -135,7 +135,7 @@ export function App() {
     const duration = durationForMode(settings, current.mode);
     try {
       if (current.currentSessionId && current.sessionStartedAt) {
-        await api.completeSession({ id: current.currentSessionId, mode: current.mode, startedAt: current.sessionStartedAt, endedAt, durationSeconds: duration, taskId: current.activeTaskId });
+        await api.completeSession({ id: current.currentSessionId, mode: current.mode, startedAt: current.sessionStartedAt, endedAt, durationSeconds: duration, taskId: current.currentSessionTaskId, taskTitle: current.currentSessionTaskTitle, projectId: current.currentSessionProjectId });
       }
       soundAlarm();
       if (settings.notificationReminderMinutes > 0 && "Notification" in window && Notification.permission === "granted") {
@@ -156,7 +156,10 @@ export function App() {
         cyclePomos,
         activeTaskId: current.activeTaskId,
         currentSessionId: autoStart ? crypto.randomUUID() : null,
-        sessionStartedAt: startedAt
+        sessionStartedAt: startedAt,
+        currentSessionTaskId: autoStart ? current.activeTaskId : null,
+        currentSessionTaskTitle: autoStart ? data?.tasks.find((task) => task.id === current.activeTaskId)?.title ?? null : null,
+        currentSessionProjectId: autoStart ? data?.tasks.find((task) => task.id === current.activeTaskId)?.projectId ?? null : null
       };
       await persistTimer(next);
       await loadData();
@@ -183,7 +186,7 @@ export function App() {
     const keydown = (event: KeyboardEvent) => {
       if ((event.key === "t" || event.key === "T") && !event.metaKey && !event.ctrlKey && !event.altKey && !["INPUT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName ?? "")) {
         event.preventDefault();
-        window.dispatchEvent(new CustomEvent("pomofocus-add-task"));
+        window.dispatchEvent(new CustomEvent("foucusly-add-task"));
       }
       if (event.key === "Escape") setDialog(null);
     };
@@ -196,7 +199,7 @@ export function App() {
     : timer?.remainingSeconds ?? 0, [timer, now]);
 
   const updateData = async (change: (current: BootstrapData) => BootstrapData) => setData((current) => current ? change(current) : current);
-  const handleTaskCreate = async (draft: Pick<Task, "title" | "note" | "estimatePomos">) => {
+  const handleTaskCreate = async (draft: Pick<Task, "title" | "note" | "estimatePomos" | "projectId">) => {
     await api.createTask(draft); await loadData();
   };
   const handleTaskUpdate = async (id: string, patch: Partial<Task>) => { await api.updateTask(id, patch); await loadData(); };
@@ -208,8 +211,14 @@ export function App() {
       await persistTimer({ ...timer, activeTaskId: null });
     }
   };
-  const handleCreateTemplate = async (draft: Pick<Task, "title" | "note" | "estimatePomos">, name: string) => { await api.createTemplate({ ...draft, name }); await loadData(); notify("Template saved."); };
+  const handleCreateTemplate = async (draft: Pick<Task, "title" | "note" | "estimatePomos" | "projectId">, name: string) => {
+    const { projectId: _projectId, ...template } = draft;
+    await api.createTemplate({ ...template, name }); await loadData(); notify("Template saved.");
+  };
   const handleUseTemplate = async (id: string) => { await api.useTemplate(id); await loadData(); };
+  const handleCreateProject = async (name: string) => { const project = await api.createProject(name); await loadData(); return project; };
+  const handleRenameProject = async (id: string, name: string) => { await api.renameProject(id, name); await loadData(); };
+  const handleArchiveProject = async (id: string) => { await api.archiveProject(id); await loadData(); };
 
   const selectMode = (mode: TimerMode) => {
     if (!timer || !data) return;
@@ -222,7 +231,14 @@ export function App() {
       void persistTimer({ ...timer, running: false, endsAt: null, remainingSeconds });
     } else {
       const sessionStartedAt = timer.sessionStartedAt ?? new Date().toISOString();
-      void persistTimer({ ...timer, running: true, endsAt: Date.now() + timer.remainingSeconds * 1000, currentSessionId: timer.currentSessionId ?? crypto.randomUUID(), sessionStartedAt });
+      const newSession = !timer.currentSessionId;
+      const task = data.tasks.find((item) => item.id === timer.activeTaskId);
+      void persistTimer({ ...timer, running: true, endsAt: Date.now() + timer.remainingSeconds * 1000,
+        currentSessionId: timer.currentSessionId ?? crypto.randomUUID(), sessionStartedAt,
+        currentSessionTaskId: newSession ? timer.activeTaskId : timer.currentSessionTaskId,
+        currentSessionTaskTitle: newSession ? task?.title ?? null : timer.currentSessionTaskTitle,
+        currentSessionProjectId: newSession ? task?.projectId ?? null : timer.currentSessionProjectId
+      });
     }
   };
   const saveSettings = async (settings: Settings) => {
@@ -235,7 +251,7 @@ export function App() {
   const shellTheme = data?.settings.themeColor ?? "red";
   const darkRunning = Boolean(data?.settings.darkModeWhenRunning && timer?.running);
 
-  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Pomofocus</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); void loadData().catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>npm run dev</code>.</small></div></main>;
+  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); void loadData().catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>npm run dev</code>.</small></div></main>;
   if (!data || !timer) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
 
   return <div className={`app-shell theme-${shellTheme} ${darkRunning ? "dark-running" : ""}`}>
@@ -246,15 +262,14 @@ export function App() {
         <Header onReport={() => setDialog("report")} onSettings={() => setDialog("settings")} onSignIn={() => setDialog("signin")} />
         <main className="focus-main">
           <TimerPanel mode={timer.mode} seconds={seconds} running={timer.running} cyclePomos={timer.cyclePomos} taskTitle={data.tasks.find((task) => task.id === timer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} />
-          <TasksPanel tasks={data.tasks} templates={data.templates} activeTaskId={timer.activeTaskId} visible={data.settings.tasksVisible} hourFormat={data.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onUseTemplate={handleUseTemplate} onCreateTemplate={handleCreateTemplate} onAction={handleAction} onSelect={setActiveTask} onToast={notify} />
+          <TasksPanel tasks={data.tasks} projects={data.projects} templates={data.templates} activeTaskId={timer.activeTaskId} visible={data.settings.tasksVisible} hourFormat={data.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onUseTemplate={handleUseTemplate} onCreateTemplate={handleCreateTemplate} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onArchiveProject={handleArchiveProject} />
         </main>
       </div>
     </div>
-    {!isSimplePage && <MarketingContent />}
-    <div className="app-bottom-link">{isSimplePage ? <a href="/">FULL PAGE</a> : <a href="/app">SIMPLE PAGE</a>}</div>
+    {isSimplePage && <div className="app-bottom-link"><a href="/">FULL PAGE</a></div>}
     {dialog === "settings" && <SettingsDialog initial={data.settings} onSave={saveSettings} onClose={() => setDialog(null)} onToast={notify} />}
-    {dialog === "report" && <ReportDialog onClose={() => setDialog(null)} onToast={notify} />}
-    {dialog === "signin" && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}><section className="small-dialog signin-dialog" role="dialog" aria-modal="true" aria-labelledby="signin-title"><button className="dialog-close" aria-label="Close sign in" onClick={() => setDialog(null)}><X size={20} /></button><div className="dialog-lock"><span>PF</span></div><h2 id="signin-title">Sign in to Pomofocus</h2><p>Accounts aren't enabled in this local clone. Your tasks, settings, and reports are saved in the local database.</p><button className="button-dark full-button" onClick={() => setDialog(null)}>Continue focusing</button></section></div>}
+    {dialog === "report" && <ReportDialog onClose={() => setDialog(null)} />}
+    {dialog === "signin" && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}><section className="small-dialog signin-dialog" role="dialog" aria-modal="true" aria-labelledby="signin-title"><button className="dialog-close" aria-label="Close sign in" onClick={() => setDialog(null)}><X size={20} /></button><div className="dialog-lock"><span>F</span></div><h2 id="signin-title">Sign in to Foucusly</h2><p>Accounts aren't enabled in this local version. Your tasks, settings, and reports are saved in the local database.</p><button className="button-dark full-button" onClick={() => setDialog(null)}>Continue focusing</button></section></div>}
     {toast && <div className="toast-message" role="status">{toast}<button aria-label="Dismiss notification" onClick={() => setToast("")}><X size={16} /></button></div>}
   </div>;
 }

@@ -11,6 +11,14 @@ export interface Task {
   completed: boolean;
   sortOrder: number;
   createdAt: string;
+  projectId: string | null;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+  archivedAt: string | null;
 }
 
 export interface TaskTemplate {
@@ -53,6 +61,9 @@ export interface TimerState {
   activeTaskId: string | null;
   currentSessionId: string | null;
   sessionStartedAt: string | null;
+  currentSessionTaskId: string | null;
+  currentSessionTaskTitle: string | null;
+  currentSessionProjectId: string | null;
 }
 
 export interface SessionRecord {
@@ -62,17 +73,21 @@ export interface SessionRecord {
   endedAt: string;
   durationSeconds: number;
   taskId: string | null;
+  taskTitle: string | null;
+  projectId: string | null;
 }
 
 export interface BootstrapData {
   tasks: Task[];
+  projects: Project[];
   templates: TaskTemplate[];
   settings: Settings;
   timer: TimerState;
 }
 
-export interface DailyReport {
-  date: string;
+export interface ReportBucket {
+  key: string;
+  label: string;
   focusSeconds: number;
   sessions: number;
 }
@@ -85,8 +100,28 @@ export interface ReportData {
   focusSessions: number;
   activeDays: number;
   currentStreak: number;
-  daily: DailyReport[];
-  sessions: SessionRecord[];
+  timeline: ReportBucket[];
+  projects: ProjectReport[];
+}
+
+export interface ProjectReport {
+  projectId: string | null;
+  projectName: string;
+  focusSeconds: number;
+  sessions: number;
+}
+
+export interface DetailedSession extends SessionRecord {
+  projectName: string;
+}
+
+export interface RankingEntry {
+  rank: number;
+  id: string | null;
+  name: string;
+  projectId: string | null;
+  focusSeconds: number;
+  sessions: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
