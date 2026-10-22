@@ -21,6 +21,12 @@ export interface Project {
   archivedAt: string | null;
 }
 
+export interface Profile {
+  id: string;
+  username: string;
+  createdAt: string;
+}
+
 export interface TaskTemplate {
   id: string;
   name: string;
@@ -78,6 +84,7 @@ export interface SessionRecord {
 }
 
 export interface BootstrapData {
+  profile: Profile;
   tasks: Task[];
   projects: Project[];
   templates: TaskTemplate[];
