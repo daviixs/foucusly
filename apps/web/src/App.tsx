@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowClockwise, X } from "@phosphor-icons/react";
-import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Settings, type Task, type TaskTemplate, type TimerMode, type TimerState } from "@foucusly/contracts";
+import { ArrowClockwise, Crown, Keyboard, Trash, X } from "@phosphor-icons/react";
+import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Profile, type Settings, type Task, type TaskTemplate, type TimerMode, type TimerState } from "@foucusly/contracts";
 import { api } from "./api";
 import { Header } from "./components/Header";
 import { ReportDialog } from "./components/ReportDialog";
@@ -9,6 +9,7 @@ import CloudBackdrop from "./components/CloudBackdrop";
 import DarkStarfield from "./components/DarkStarfield";
 import { TasksPanel } from "./components/TasksPanel";
 import { TimerPanel } from "./components/TimerPanel";
+import { ProfileGate } from "./components/ProfileGate";
 
 const freshTimer = (settings: Settings, mode: TimerMode, activeTaskId: string | null, cyclePomos: number): TimerState => ({
   mode, remainingSeconds: durationForMode(settings, mode), running: false, endsAt: null, cyclePomos, activeTaskId,
@@ -18,6 +19,14 @@ const freshTimer = (settings: Settings, mode: TimerMode, activeTaskId: string | 
 export function App() {
   const isSimplePage = window.location.pathname === "/app";
   const [data, setData] = useState<BootstrapData | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [profileCreateMode, setProfileCreateMode] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
+  const [premiumDialogOpen, setPremiumDialogOpen] = useState(false);
   const [timer, setTimer] = useState<TimerState | null>(null);
   const [now, setNow] = useState(Date.now());
   const [loadingError, setLoadingError] = useState("");
@@ -46,7 +55,77 @@ export function App() {
     return loaded;
   }, []);
 
-  useEffect(() => { void loadData().catch((error: Error) => setLoadingError(error.message)); }, [loadData]);
+  const activateProfile = useCallback(async (next: Profile) => {
+    api.setActiveProfile(next.id);
+    window.localStorage.setItem("foucusly-profile-id", next.id);
+    setProfile(next);
+    setData(null);
+    setTimer(null);
+    try { await loadData(); }
+    catch (error) { setLoadingError((error as Error).message); }
+  }, [loadData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.profiles().then(async (available) => {
+      if (cancelled) return;
+      setProfiles(available);
+      const savedId = window.localStorage.getItem("foucusly-profile-id");
+      const savedProfile = available.find((item) => item.id === savedId);
+      if (savedProfile) await activateProfile(savedProfile);
+    }).catch((error: Error) => { if (!cancelled) setLoadingError(error.message); });
+    return () => { cancelled = true; };
+  }, [activateProfile]);
+
+  const createLocalProfile = async (username: string) => {
+    const created = await api.createProfile(username);
+    const available = await api.profiles();
+    setProfiles(available);
+    setProfileDialogOpen(false);
+    setProfileCreateMode(false);
+    await activateProfile(created);
+    notify(`Profile “${created.username}” created.`);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!profile || deleting) return;
+    setDeleting(true);
+    try {
+      const deletedId = profile.id;
+      const deletedName = profile.username;
+      await api.deleteProfile(deletedId);
+      window.localStorage.removeItem("foucusly-profile-id");
+      const remaining = await api.profiles();
+      setProfiles(remaining);
+      setDeleteDialogOpen(false);
+      if (remaining.length > 0) {
+        await activateProfile(remaining[0]);
+        notify(`Account “${deletedName}” deleted.`);
+      } else {
+        setProfile(null);
+        setData(null);
+        setTimer(null);
+        setProfileCreateMode(true);
+        setProfileDialogOpen(true);
+        notify(`Account “${deletedName}” deleted.`);
+      }
+    } catch (err) {
+      notify(`Could not delete account: ${(err as Error).message}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleLogout = () => {
+    window.localStorage.removeItem("foucusly-profile-id");
+    const previousName = profile?.username;
+    setProfile(null);
+    setData(null);
+    setTimer(null);
+    setProfileCreateMode(false);
+    setProfileDialogOpen(true);
+    if (previousName) notify(`Logged out from “${previousName}”.`);
+  };
   useEffect(() => { timerRef.current = timer; }, [timer]);
 
   useEffect(() => {
@@ -182,18 +261,49 @@ export function App() {
     return () => window.clearInterval(interval);
   }, [timer?.running, timer?.endsAt, finishSession]);
 
+  const toggleTimer = () => {
+    if (!timer || !data) return;
+    if (timer.running) {
+      const remainingSeconds = Math.max(0, Math.ceil(((timer.endsAt ?? now) - now) / 1000));
+      void persistTimer({ ...timer, running: false, endsAt: null, remainingSeconds });
+    } else {
+      const sessionStartedAt = timer.sessionStartedAt ?? new Date().toISOString();
+      const newSession = !timer.currentSessionId;
+      const task = data.tasks.find((item) => item.id === timer.activeTaskId);
+      void persistTimer({ ...timer, running: true, endsAt: Date.now() + timer.remainingSeconds * 1000,
+        currentSessionId: timer.currentSessionId ?? crypto.randomUUID(), sessionStartedAt,
+        currentSessionTaskId: newSession ? timer.activeTaskId : timer.currentSessionTaskId,
+        currentSessionTaskTitle: newSession ? task?.title ?? null : timer.currentSessionTaskTitle,
+        currentSessionProjectId: newSession ? task?.projectId ?? null : timer.currentSessionProjectId
+      });
+    }
+  };
+
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if ((event.key === "t" || event.key === "T") && !event.metaKey && !event.ctrlKey && !event.altKey && !["INPUT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName ?? "")) {
+      const isInput = ["INPUT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName ?? "") || (event.target as HTMLElement)?.isContentEditable;
+      if ((event.key === "t" || event.key === "T") && !event.metaKey && !event.ctrlKey && !event.altKey && !isInput) {
         event.preventDefault();
         window.dispatchEvent(new CustomEvent("foucusly-add-task"));
       }
-      if (event.key === "Escape") setDialog(null);
+      if (event.key === " " && !isInput && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        toggleTimer();
+      }
+      if (event.key === "Escape") {
+        setDialog(null);
+        setDeleteDialogOpen(false);
+        setShortcutsDialogOpen(false);
+        setPremiumDialogOpen(false);
+        if (profile) {
+          setProfileDialogOpen(false);
+          setProfileCreateMode(false);
+        }
+      }
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, []);
-
+  }, [profile, toggleTimer]);
   const seconds = useMemo(() => timer?.running && timer.endsAt !== null
     ? Math.max(0, Math.ceil((timer.endsAt - now) / 1000))
     : timer?.remainingSeconds ?? 0, [timer, now]);
@@ -224,23 +334,7 @@ export function App() {
     if (!timer || !data) return;
     void persistTimer(freshTimer(data.settings, mode, timer.activeTaskId, timer.cyclePomos));
   };
-  const toggleTimer = () => {
-    if (!timer || !data) return;
-    if (timer.running) {
-      const remainingSeconds = Math.max(0, Math.ceil(((timer.endsAt ?? now) - now) / 1000));
-      void persistTimer({ ...timer, running: false, endsAt: null, remainingSeconds });
-    } else {
-      const sessionStartedAt = timer.sessionStartedAt ?? new Date().toISOString();
-      const newSession = !timer.currentSessionId;
-      const task = data.tasks.find((item) => item.id === timer.activeTaskId);
-      void persistTimer({ ...timer, running: true, endsAt: Date.now() + timer.remainingSeconds * 1000,
-        currentSessionId: timer.currentSessionId ?? crypto.randomUUID(), sessionStartedAt,
-        currentSessionTaskId: newSession ? timer.activeTaskId : timer.currentSessionTaskId,
-        currentSessionTaskTitle: newSession ? task?.title ?? null : timer.currentSessionTaskTitle,
-        currentSessionProjectId: newSession ? task?.projectId ?? null : timer.currentSessionProjectId
-      });
-    }
-  };
+
   const saveSettings = async (settings: Settings) => {
     const saved = await api.saveSettings(settings);
     setData((current) => current ? { ...current, settings: saved } : current);
@@ -248,28 +342,227 @@ export function App() {
   };
   const setActiveTask = (id: string) => { if (timer) void persistTimer({ ...timer, activeTaskId: id }); };
 
-  const shellTheme = data?.settings.themeColor ?? "red";
-  const darkRunning = Boolean(data?.settings.darkModeWhenRunning && timer?.running);
+  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else void api.profiles().then(setProfiles).catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>npm run dev</code>.</small></div></main>;
+  if (profile && (!data || !timer)) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
 
-  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); void loadData().catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>npm run dev</code>.</small></div></main>;
-  if (!data || !timer) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
+  const shownData = data ?? { tasks: [], projects: [], templates: [], settings: DEFAULT_SETTINGS };
+  const shownTimer = timer ?? freshTimer(DEFAULT_SETTINGS, "pomodoro", null, 0);
+  const shellTheme = shownData.settings.themeColor ?? "red";
+  const darkRunning = Boolean(shownData.settings.darkModeWhenRunning && shownTimer.running);
 
   return <div className={`app-shell theme-${shellTheme} ${darkRunning ? "dark-running" : ""}`}>
     <div className="focus-area">
       {darkRunning && <DarkStarfield />}
       <CloudBackdrop dark={darkRunning} />
       <div className="app-container">
-        <Header onReport={() => setDialog("report")} onSettings={() => setDialog("settings")} onSignIn={() => setDialog("signin")} />
+        <Header
+          profile={profile}
+          onAccount={() => {
+            setProfileCreateMode(false);
+            setProfileDialogOpen(true);
+          }}
+          onPremium={() => setPremiumDialogOpen(true)}
+          onLogout={handleLogout}
+          onShortcuts={() => setShortcutsDialogOpen(true)}
+          onDeleteAccount={() => setDeleteDialogOpen(true)}
+          onReport={() => setDialog("report")}
+          onSettings={() => setDialog("settings")}
+          onSignIn={() => {
+            setProfileCreateMode(profiles.length === 0);
+            setProfileDialogOpen(true);
+          }}
+        />
         <main className="focus-main">
-          <TimerPanel mode={timer.mode} seconds={seconds} running={timer.running} cyclePomos={timer.cyclePomos} taskTitle={data.tasks.find((task) => task.id === timer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} />
-          <TasksPanel tasks={data.tasks} projects={data.projects} templates={data.templates} activeTaskId={timer.activeTaskId} visible={data.settings.tasksVisible} hourFormat={data.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onUseTemplate={handleUseTemplate} onCreateTemplate={handleCreateTemplate} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onArchiveProject={handleArchiveProject} />
+          <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} />
+          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} templates={shownData.templates} activeTaskId={shownTimer.activeTaskId} visible={shownData.settings.tasksVisible} hourFormat={shownData.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onUseTemplate={handleUseTemplate} onCreateTemplate={handleCreateTemplate} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onArchiveProject={handleArchiveProject} />
         </main>
       </div>
     </div>
     {isSimplePage && <div className="app-bottom-link"><a href="/">FULL PAGE</a></div>}
-    {dialog === "settings" && <SettingsDialog initial={data.settings} onSave={saveSettings} onClose={() => setDialog(null)} onToast={notify} />}
+    {dialog === "settings" && data && <SettingsDialog initial={data.settings} onSave={saveSettings} onClose={() => setDialog(null)} onToast={notify} />}
     {dialog === "report" && <ReportDialog onClose={() => setDialog(null)} />}
-    {dialog === "signin" && <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}><section className="small-dialog signin-dialog" role="dialog" aria-modal="true" aria-labelledby="signin-title"><button className="dialog-close" aria-label="Close sign in" onClick={() => setDialog(null)}><X size={20} /></button><div className="dialog-lock"><span>F</span></div><h2 id="signin-title">Sign in to Foucusly</h2><p>Accounts aren't enabled in this local version. Your tasks, settings, and reports are saved in the local database.</p><button className="button-dark full-button" onClick={() => setDialog(null)}>Continue focusing</button></section></div>}
+    {(!profile || profileDialogOpen) && (
+      <ProfileGate
+        profiles={profiles}
+        activeProfileId={profile?.id ?? null}
+        initialCreating={profileCreateMode || profiles.length === 0}
+        onSelect={(selected) => {
+          setProfileDialogOpen(false);
+          setProfileCreateMode(false);
+          void activateProfile(selected);
+        }}
+        onCreate={createLocalProfile}
+        onClose={profile ? () => {
+          setProfileDialogOpen(false);
+          setProfileCreateMode(false);
+        } : undefined}
+      />
+    )}
+    {deleteDialogOpen && profile && (
+      <div
+        className="dialog-backdrop"
+        onMouseDown={(event) => {
+          if (!deleting && event.target === event.currentTarget) {
+            setDeleteDialogOpen(false);
+          }
+        }}
+      >
+        <section
+          className="section-dialog delete-account-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-account-title"
+        >
+          <header className="section-dialog-header">
+            <button
+              className="dialog-close"
+              aria-label="Close"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={deleting}
+            >
+              <X size={20} />
+            </button>
+            <span className="section-dialog-icon delete-icon">
+              <Trash size={28} weight="duotone" />
+            </span>
+            <span className="dialog-eyebrow">DANGER ZONE</span>
+            <h2 id="delete-account-title">Delete Account</h2>
+            <p>
+              Are you sure you want to permanently delete account <strong>{profile.username}</strong>?
+              All your tasks, projects, sessions, and settings will be permanently removed.
+            </p>
+          </header>
+          <footer className="dialog-footer">
+            <button
+              type="button"
+              className="button-muted"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button-danger"
+              onClick={() => void handleDeleteAccount()}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete Account"}
+            </button>
+          </footer>
+        </section>
+      </div>
+    )}
+    {shortcutsDialogOpen && (
+      <div
+        className="dialog-backdrop"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setShortcutsDialogOpen(false);
+        }}
+      >
+        <section
+          className="section-dialog shortcuts-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="shortcuts-dialog-title"
+        >
+          <header className="section-dialog-header">
+            <button
+              className="dialog-close"
+              aria-label="Close"
+              onClick={() => setShortcutsDialogOpen(false)}
+            >
+              <X size={20} />
+            </button>
+            <span className="section-dialog-icon">
+              <Keyboard size={28} weight="duotone" />
+            </span>
+            <span className="dialog-eyebrow">QUICK ACCESS</span>
+            <h2 id="shortcuts-dialog-title">Keyboard Shortcuts</h2>
+            <p>Speed up your productivity with keyboard controls.</p>
+          </header>
+          <div className="shortcuts-content">
+            <div className="shortcut-row">
+              <span>Start or pause timer</span>
+              <kbd>Space</kbd>
+            </div>
+            <div className="shortcut-row">
+              <span>Add a new task</span>
+              <kbd>T</kbd>
+            </div>
+            <div className="shortcut-row">
+              <span>Close open dialog</span>
+              <kbd>Esc</kbd>
+            </div>
+          </div>
+          <footer className="dialog-footer">
+            <button
+              type="button"
+              className="button-dark"
+              onClick={() => setShortcutsDialogOpen(false)}
+            >
+              Got it
+            </button>
+          </footer>
+        </section>
+      </div>
+    )}
+    {premiumDialogOpen && (
+      <div
+        className="dialog-backdrop"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPremiumDialogOpen(false);
+        }}
+      >
+        <section
+          className="section-dialog premium-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="premium-dialog-title"
+        >
+          <header className="section-dialog-header">
+            <button
+              className="dialog-close"
+              aria-label="Close"
+              onClick={() => setPremiumDialogOpen(false)}
+            >
+              <X size={20} />
+            </button>
+            <span className="section-dialog-icon premium-icon">
+              <Crown size={28} weight="duotone" />
+            </span>
+            <span className="dialog-eyebrow">UPGRADE</span>
+            <h2 id="premium-dialog-title">Foucusly Premium</h2>
+            <p>Supercharge your daily focus sessions with pro features.</p>
+          </header>
+          <div className="premium-content">
+            <ul className="premium-features-list">
+              <li>
+                <strong>Webhook Automations:</strong> Sync completed focus sessions with Discord, Slack, and Notion automatically.
+              </li>
+              <li>
+                <strong>Ambient Audio Library:</strong> High-definition binaural beats and cafe/nature soundscapes.
+              </li>
+              <li>
+                <strong>Deep Ranking & Analytics:</strong> Export full CSV reports with detailed project timeline insights.
+              </li>
+              <li>
+                <strong>Unlimited Templates:</strong> Save repeatable daily task routines and templates without limits.
+              </li>
+            </ul>
+          </div>
+          <footer className="dialog-footer">
+            <button
+              type="button"
+              className="button-dark"
+              onClick={() => setPremiumDialogOpen(false)}
+            >
+              Close
+            </button>
+          </footer>
+        </section>
+      </div>
+    )}
     {toast && <div className="toast-message" role="status">{toast}<button aria-label="Dismiss notification" onClick={() => setToast("")}><X size={16} /></button></div>}
   </div>;
 }
