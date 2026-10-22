@@ -19,6 +19,7 @@ export interface Project {
   name: string;
   createdAt: string;
   archivedAt: string | null;
+  color: string | null;
 }
 
 export interface Profile {

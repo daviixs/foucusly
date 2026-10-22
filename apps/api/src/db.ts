@@ -34,7 +34,8 @@ function migrateSingletonTable(db: DatabaseType, table: "settings" | "timer") {
 }
 
 export function createDatabase(path = process.env.DATABASE_PATH ?? "data/foucusly.sqlite"): DatabaseType {
-  const resolved = resolve(path);
+  const resolved = path === ":memory:" ? path : resolve(path);
+  mkdirSync(resolved === path ? "." : dirname(resolved), { recursive: true });
   mkdirSync(dirname(resolved), { recursive: true });
   const db = new Database(resolved);
   db.pragma("journal_mode = WAL");
@@ -87,6 +88,22 @@ export function createDatabase(path = process.env.DATABASE_PATH ?? "data/foucusl
   ensureColumn(db, "tasks", "project_id", "TEXT");
   ensureColumn(db, "sessions", "task_title", "TEXT");
   ensureColumn(db, "sessions", "project_id", "TEXT");
+  ensureColumn(db, "projects", "color", "TEXT");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      endpoint TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL,
+      value TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS push_reminders (
+      profile_id TEXT NOT NULL,
+      ends_at INTEGER NOT NULL,
+      sent_at TEXT NOT NULL,
+      PRIMARY KEY (profile_id, ends_at)
+    );
+    CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  `);
   db.exec("CREATE INDEX IF NOT EXISTS sessions_period_idx ON sessions(mode, ended_at)");
   db.exec("CREATE INDEX IF NOT EXISTS sessions_project_idx ON sessions(project_id, ended_at)");
   db.exec("CREATE INDEX IF NOT EXISTS tasks_project_idx ON tasks(project_id)");
@@ -174,10 +191,64 @@ export function writeTimer(db: AppDatabase, profileId: string, timer: TimerState
     .run(profileId, JSON.stringify(timer));
 }
 
+export interface StoredPushSubscription {
+  endpoint: string;
+  profileId: string;
+  subscription: unknown;
+  createdAt: string;
+}
+
+export function upsertPushSubscription(db: AppDatabase, profileId: string, endpoint: string, subscription: string): StoredPushSubscription {
+  const createdAt = new Date().toISOString();
+  db.prepare("INSERT INTO push_subscriptions (endpoint, profile_id, value, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET profile_id = excluded.profile_id, value = excluded.value")
+    .run(endpoint, profileId, subscription, createdAt);
+  return { endpoint, profileId, subscription: JSON.parse(subscription) as unknown, createdAt };
+}
+
+export function deletePushSubscription(db: AppDatabase, endpoint: string): boolean {
+  return db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").run(endpoint).changes > 0;
+}
+
+export function listPushSubscriptions(db: AppDatabase, profileId?: string): StoredPushSubscription[] {
+  const rows = profileId
+    ? db.prepare("SELECT endpoint, profile_id AS profileId, value, created_at AS createdAt FROM push_subscriptions WHERE profile_id = ?").all(profileId)
+    : db.prepare("SELECT endpoint, profile_id AS profileId, value, created_at AS createdAt FROM push_subscriptions").all();
+  return (rows as Array<Omit<StoredPushSubscription, "subscription"> & { value: string }>).map((row) => ({ endpoint: row.endpoint, profileId: row.profileId, createdAt: row.createdAt, subscription: JSON.parse(row.value) as unknown }));
+}
+
+export function countRunningTimers(db: AppDatabase): Array<{ profileId: string; endsAt: number; mode: string }> {
+  const rows = db.prepare("SELECT profile_id, value FROM timer WHERE value NOT LIKE '%\"running\":false%'").all() as Array<{ profile_id: string; value: string }>;
+  const due: Array<{ profileId: string; endsAt: number; mode: string }> = [];
+  for (const row of rows) {
+    try {
+      const timer = JSON.parse(row.value) as { running: boolean; endsAt: number | null; mode: string };
+      if (timer.running && typeof timer.endsAt === "number") due.push({ profileId: row.profile_id, endsAt: timer.endsAt, mode: timer.mode });
+    } catch { continue; }
+  }
+  return due;
+}
+
+export function reminderSeen(db: AppDatabase, profileId: string, endsAt: number): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM push_reminders WHERE profile_id = ? AND ends_at = ?").get(profileId, endsAt));
+}
+
+export function markReminderSent(db: AppDatabase, profileId: string, endsAt: number): void {
+  db.prepare("INSERT OR IGNORE INTO push_reminders (profile_id, ends_at, sent_at) VALUES (?, ?, ?)").run(profileId, endsAt, new Date().toISOString());
+}
+
+export function getConfigValue(db: AppDatabase, key: string): string | undefined {
+  const row = db.prepare("SELECT value FROM app_config WHERE key = ?").get(key) as { value: string } | undefined;
+  return row?.value;
+}
+
+export function putConfigValue(db: AppDatabase, key: string, value: string): void {
+  db.prepare("INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+}
+
 export function readBootstrap(db: AppDatabase, profileId: string): BootstrapData {
   const tasks = db.prepare("SELECT id, title, note, estimate_pomos AS estimatePomos, completed_pomos AS completedPomos, completed, sort_order AS sortOrder, created_at AS createdAt, project_id AS projectId FROM tasks WHERE profile_id = ? ORDER BY sort_order, created_at")
     .all(profileId) as Array<Omit<BootstrapData["tasks"][number], "completed"> & { completed: number }>;
-  const projects = db.prepare("SELECT id, name, created_at AS createdAt, archived_at AS archivedAt FROM projects WHERE profile_id = ? AND archived_at IS NULL ORDER BY name COLLATE NOCASE")
+  const projects = db.prepare("SELECT id, name, created_at AS createdAt, archived_at AS archivedAt, color FROM projects WHERE profile_id = ? AND archived_at IS NULL ORDER BY name COLLATE NOCASE")
     .all(profileId) as Project[];
   const templates = db.prepare("SELECT id, name, title, note, estimate_pomos AS estimatePomos, created_at AS createdAt FROM templates WHERE profile_id = ? ORDER BY created_at")
     .all(profileId) as BootstrapData["templates"];
