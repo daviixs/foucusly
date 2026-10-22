@@ -59,8 +59,14 @@ export function ReportDialog({ onClose }: Props) {
 
   const max = Math.max(1, ...(report?.timeline.map((item) => item.focusSeconds) ?? [0]));
   return <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title">
-      <header className="dialog-header"><div><span className="dialog-eyebrow">YOUR PROGRESS</span><h2 id="report-title">Report</h2></div><button className="dialog-close" aria-label="Close report" onClick={onClose}><X size={20} /></button></header>
+    <section className="report-dialog section-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title" aria-describedby="report-description">
+      <header className="section-dialog-header">
+        <button className="dialog-close" aria-label="Close report" onClick={onClose}><X size={20} /></button>
+        <span className="section-dialog-icon"><ChartLineUp size={25} weight="duotone" /></span>
+        <span className="dialog-eyebrow">YOUR PROGRESS</span>
+        <h2 id="report-title">Report</h2>
+        <p id="report-description">See how your focus time adds up.</p>
+      </header>
       <div className="report-top-tabs" role="tablist" aria-label="Report view">
         {(["Summary", "Detail", "Ranking"] as ReportView[]).map((item) => <button role="tab" aria-selected={view === item} key={item} className={view === item ? "active" : ""} onClick={() => setView(item)}>{item}</button>)}
       </div>
