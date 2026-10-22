@@ -1,9 +1,11 @@
-import type { BootstrapData, DetailedSession, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskTemplate, TimerState } from "@foucusly/contracts";
+import type { BootstrapData, DetailedSession, Profile, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskTemplate, TimerState } from "@foucusly/contracts";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+let activeProfileId = "";
+
+async function request<T>(path: string, init?: RequestInit, profileScoped = true): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers }
+    headers: { "content-type": "application/json", ...(profileScoped && activeProfileId ? { "x-profile-id": activeProfileId } : {}), ...init?.headers }
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
@@ -14,6 +16,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  setActiveProfile: (id: string) => { activeProfileId = id; },
+  profiles: () => request<Profile[]>("/profiles", undefined, false),
+  createProfile: (username: string) => request<Profile>("/profiles", { method: "POST", body: JSON.stringify({ username }) }, false),
+  deleteProfile: (id: string) => request<void>(`/profiles/${id}`, { method: "DELETE" }, false),
   bootstrap: () => request<BootstrapData>("/bootstrap"),
   saveSettings: (settings: Settings) => request<Settings>("/settings", { method: "PUT", body: JSON.stringify(settings) }),
   saveTimer: (timer: TimerState) => request<TimerState>("/timer", { method: "PUT", body: JSON.stringify(timer) }),
