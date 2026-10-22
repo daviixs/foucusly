@@ -9,6 +9,7 @@
     "dev:web": "npm --workspace apps/web run dev",
     "build": "npm run build --workspace packages/contracts && npm run build --workspace apps/api && npm run build --workspace apps/web",
     "typecheck": "npm run typecheck --workspace packages/contracts && npm run typecheck --workspace apps/api && npm run typecheck --workspace apps/web",
+    "test": "npm run test --workspace apps/api",
     "start": "npm --workspace apps/api run start"
   },
   "devDependencies": {
