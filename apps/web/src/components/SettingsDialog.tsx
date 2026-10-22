@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { BellRinging, GearSix, LockKey, X } from "@phosphor-icons/react";
 import type { Settings } from "@foucusly/contracts";
+import { api } from "../api";
+
+function urlBase64ToUint8Array(base64Url: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
+  const base64 = (base64Url + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const output = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let index = 0; index < raw.length; index++) output[index] = raw.charCodeAt(index);
+  return output;
+}
 
 interface Props {
   initial: Settings;
@@ -24,8 +34,47 @@ function SelectSetting({ label, value, options, onChange }: { label: string; val
 export function SettingsDialog({ initial, onSave, onClose, onToast }: Props) {
   const [settings, setSettings] = useState(initial);
   const [busy, setBusy] = useState(false);
+  const [deviceBusy, setDeviceBusy] = useState(false);
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setSettings((current) => ({ ...current, [key]: value }));
   const save = async () => { setBusy(true); try { await onSave(settings); onClose(); } finally { setBusy(false); } };
+
+  const enableDevice = async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      onToast("Push notifications are not supported in this browser.");
+      return;
+    }
+    setDeviceBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        onToast("Notification permission was not granted.");
+        return;
+      }
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      const { publicKey } = await api.pushPublicKey();
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+      }
+      await api.subscribePush(JSON.stringify(subscription));
+      onToast("Reminders will now reach this device even with the tab closed.");
+    } catch (reason) {
+      onToast(`Could not enable this device: ${(reason as Error).message}`);
+    } finally {
+      setDeviceBusy(false);
+    }
+  };
+
+  const testPush = async () => {
+    try {
+      const result = await api.testPush();
+      onToast(result.ok ? `Test reminder sent to ${result.delivered} device(s).` : "No push device was reachable. Re-add this device.");
+    } catch (reason) {
+      onToast((reason as Error).message);
+    }
+  };
+
   return <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="settings-dialog section-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-describedby="settings-description">
       <header className="section-dialog-header">
@@ -47,7 +96,7 @@ export function SettingsDialog({ initial, onSave, onClose, onToast }: Props) {
           <div className="sound-settings"><SelectSetting label="Focus Sound" value={settings.focusSound} options={["None", "Rain", "Cafe", "Forest", "White noise"]} onChange={(value) => set("focusSound", value)} /><label className="range-setting"><span>Volume</span><input aria-label="Focus sound volume" type="range" min={0} max={100} value={settings.focusVolume} onChange={(event) => set("focusVolume", Number(event.target.value))} /><output>{settings.focusVolume}</output></label></div>
         </section>
         <section className="settings-group"><h3>Time Display</h3><div className="select-grid"><SelectSetting label="Hour Format" value={settings.hourFormat} options={["24-hour", "12-hour"]} onChange={(value) => set("hourFormat", value as Settings["hourFormat"])} /><SelectSetting label="Week starts on" value={settings.weekStartsOn === 1 ? "Monday" : "Sunday"} options={["Monday", "Sunday"]} onChange={(value) => set("weekStartsOn", value === "Monday" ? 1 : 0)} /></div></section>
-        <section className="settings-group"><h3>Notification</h3><div className="select-grid"><NumberSetting label="Reminder" value={settings.notificationReminderMinutes} min={0} max={120} suffix="min" onChange={(value) => set("notificationReminderMinutes", value)} /><button className="device-button" onClick={() => { if ("Notification" in window) void Notification.requestPermission().then((permission) => onToast(permission === "granted" ? "Notifications enabled on this device." : "Notification permission was not granted.")); }}><BellRinging size={16} /> Add this device</button></div></section>
+        <section className="settings-group"><h3>Notification</h3><div className="select-grid"><NumberSetting label="Reminder" value={settings.notificationReminderMinutes} min={0} max={120} suffix="min" onChange={(value) => set("notificationReminderMinutes", value)} /><button className="device-button" disabled={deviceBusy} onClick={() => { void enableDevice(); }}><BellRinging size={16} /> {deviceBusy ? "Enabling…" : "Add this device"}</button><button className="device-button" onClick={() => { void testPush(); }}><BellRinging size={16} /> Test reminder</button></div></section>
         <section className="settings-group"><h3>Integration</h3><div className="integration-row"><div><b>Webhook</b><small>Connect Foucusly with other apps</small></div><button className="locked-button" onClick={() => onToast("Webhooks are a Premium feature.")}>Add <LockKey size={13} /></button></div></section>
       </div>
       <footer className="dialog-footer"><button className="button-muted" onClick={onClose}>Cancel</button><button className="button-dark" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "OK"}</button></footer>

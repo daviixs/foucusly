@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Check, DotsThreeVertical, Folder, LockKey, Minus, NotePencil, Plus, PlusCircle, Trash, X } from "@phosphor-icons/react";
 import type { Project, Task, TaskTemplate } from "@foucusly/contracts";
 import { ProjectPicker } from "./ProjectPicker";
@@ -15,14 +15,17 @@ interface TasksPanelProps {
   onCreate: (draft: TaskDraft) => Promise<void>;
   onUpdate: (id: string, patch: Partial<Task>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onReorder: (order: string[]) => Promise<void>;
   onUseTemplate: (id: string) => Promise<void>;
   onCreateTemplate: (draft: TaskDraft, name: string) => Promise<void>;
   onAction: (action: "clear-finished" | "clear-all" | "clear-pomos" | "toggle-hidden") => Promise<void>;
   onSelect: (id: string) => void;
   onToast: (message: string) => void;
-  onCreateProject: (name: string) => Promise<Project>;
+  onCreateProject: (name: string, color?: string | null) => Promise<Project>;
   onRenameProject: (id: string, name: string) => Promise<void>;
+  onUpdateProjectColor: (id: string, color: string | null) => Promise<void>;
   onArchiveProject: (id: string) => Promise<void>;
+  onRestoreProject: (id: string) => Promise<void>;
 }
 
 function TaskEditor({ initial, edit, canTemplate, projects, onSave, onCancel, onTemplate, onManageProjects }: {
@@ -77,19 +80,22 @@ function TaskEditor({ initial, edit, canTemplate, projects, onSave, onCancel, on
   </form>;
 }
 
-function TaskRow({ task, active, projects, onSelect, onUpdate, onDelete, onManageProjects }: {
-  task: Task; active: boolean; projects: Project[]; onSelect: () => void; onUpdate: (patch: Partial<Task>) => void; onDelete: () => void;
+function TaskRow({ task, active, projects, draggable, onDragStart, onDragOver, onDrop, onSelect, onUpdate, onDelete, onManageProjects }: {
+  task: Task; active: boolean; projects: Project[]; draggable?: boolean; onDragStart?: () => void; onDragOver?: (event: DragEvent) => void; onDrop?: (event: DragEvent) => void;
+  onSelect: () => void; onUpdate: (patch: Partial<Task>) => void; onDelete: () => void;
   onManageProjects: (onCreated?: (project: Project) => void) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [menu, setMenu] = useState(false);
+  const project = task.projectId ? projects.find((item) => item.id === task.projectId) ?? null : null;
   if (editing) return <TaskEditor edit initial={task} canTemplate={false} projects={projects} onSave={async (draft) => { await onUpdate(draft); setEditing(false); }} onCancel={() => setEditing(false)} onTemplate={async () => {}} onManageProjects={onManageProjects} />;
-  return <article className={`task-row ${active ? "task-active" : ""} ${task.completed ? "task-completed" : ""}`} onClick={onSelect}>
+  return <article className={`task-row ${active ? "task-active" : ""} ${task.completed ? "task-completed" : ""} ${draggable ? "task-draggable" : ""}`} draggable={draggable} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onClick={onSelect}>
     <button className={`task-check ${task.completed ? "checked" : ""}`} aria-label={task.completed ? "Mark task incomplete" : "Mark task complete"} onClick={(event) => { event.stopPropagation(); onUpdate({ completed: !task.completed }); }}>
       {task.completed && <Check size={13} weight="bold" />}
     </button>
     <div className="task-copy"><button className="task-name" onClick={onSelect}>{task.title}</button>
-      {task.projectId && <span className="task-project-label">{projects.find((project) => project.id === task.projectId)?.name ?? "Archived project"}</span>}
+      {project && <span className="task-project-label"><i className="project-dot" style={{ background: project.color ?? "#9aa3ad" }} />{project.name}</span>}
+      {!project && task.projectId && <span className="task-project-label">Archived project</span>}
       {task.note && <p className="task-note-preview">{task.note}</p>}
       <span className="task-progress">{task.completedPomos} / {task.estimatePomos}</span>
     </div>
@@ -112,6 +118,7 @@ export function TasksPanel(props: TasksPanelProps) {
   const [overflow, setOverflow] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
+  const dragId = useRef<string | null>(null);
   const projectCreatedCallback = useRef<((project: Project) => void) | undefined>(undefined);
   const openProjectManager = (onCreated?: (project: Project) => void) => {
     projectCreatedCallback.current = onCreated;
@@ -123,6 +130,17 @@ export function TasksPanel(props: TasksPanelProps) {
     return () => window.removeEventListener("foucusly-add-task", openEditor);
   }, []);
   const tasks = [...props.tasks].sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
+  const handleDrop = (event: DragEvent, targetId: string) => {
+    event.preventDefault();
+    const draggedId = dragId.current ?? event.dataTransfer.getData("text/plain");
+    dragId.current = null;
+    if (!draggedId || draggedId === targetId) return;
+    const ids = tasks.map((task) => task.id).filter((id) => id !== draggedId);
+    const targetIndex = ids.indexOf(targetId);
+    if (targetIndex === -1) return;
+    ids.splice(targetIndex, 0, draggedId);
+    void props.onReorder(ids).catch((error: Error) => props.onToast(`Could not reorder tasks: ${error.message}`));
+  };
   const completed = tasks.filter((task) => task.completed).length;
   const activeIndex = Math.max(0, tasks.findIndex((task) => task.id === props.activeTaskId));
   const finishMinutes = tasks.filter((task) => !task.completed).reduce((total, task) => total + Math.max(0, task.estimatePomos - task.completedPomos) * 25, 0);
@@ -152,7 +170,7 @@ export function TasksPanel(props: TasksPanelProps) {
     {tasks.length > 0 && <div className="tasks-progress"><span style={{ width: `${(completed / tasks.length) * 100}%` }} /></div>}
     {props.visible && <>
       <div className="task-list">
-        {tasks.map((task) => <TaskRow key={task.id} task={task} projects={props.projects} active={task.id === props.activeTaskId} onSelect={() => props.onSelect(task.id)} onUpdate={(patch) => void props.onUpdate(task.id, patch)} onDelete={() => void props.onDelete(task.id)} onManageProjects={openProjectManager} />)}
+        {tasks.map((task) => <TaskRow key={task.id} task={task} projects={props.projects} active={task.id === props.activeTaskId} draggable onDragStart={() => { dragId.current = task.id; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, task.id)} onSelect={() => props.onSelect(task.id)} onUpdate={(patch) => void props.onUpdate(task.id, patch)} onDelete={() => void props.onDelete(task.id)} onManageProjects={openProjectManager} />)}
       </div>
       {editing ? <TaskEditor canTemplate={props.templates.length < 3} projects={props.projects} onSave={props.onCreate} onCancel={() => setEditing(false)} onTemplate={props.onCreateTemplate} onManageProjects={openProjectManager} /> : <button className="add-task-button" onClick={() => setEditing(true)}><PlusCircle size={22} weight="fill" /> <span>Add Task</span><kbd>T</kbd></button>}
       {tasks.length > 0 && <div className="finish-estimate">Pomos: {tasks[activeIndex]?.completedPomos ?? 0}/{tasks[activeIndex]?.estimatePomos ?? 0}<span>Finish At: {finishAt} ({(finishMinutes / 60).toFixed(1)}h)</span></div>}
@@ -161,6 +179,6 @@ export function TasksPanel(props: TasksPanelProps) {
     {showImport && <div className="popover-backdrop" onClick={() => setShowImport(false)}><section className="small-dialog" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
       <button className="dialog-close" aria-label="Close" onClick={() => setShowImport(false)}><X size={20} /></button><div className="dialog-lock"><LockKey size={22} /></div><h2>Todoist integration</h2><p>Connect Todoist to bring your tasks into Foucusly.</p><button className="button-dark full-button" onClick={() => { setShowImport(false); props.onToast("Todoist integration is a Premium feature."); }}>Connect Todoist</button>
     </section></div>}
-    {showProjects && <ProjectManagerDialog projects={props.projects} onCreate={props.onCreateProject} onRename={props.onRenameProject} onArchive={props.onArchiveProject} onCreated={(project) => projectCreatedCallback.current?.(project)} onClose={() => { setShowProjects(false); projectCreatedCallback.current = undefined; }} />}
+    {showProjects && <ProjectManagerDialog projects={props.projects} onCreate={props.onCreateProject} onRename={props.onRenameProject} onUpdateColor={props.onUpdateProjectColor} onArchive={props.onArchiveProject} onRestore={props.onRestoreProject} onCreated={(project) => projectCreatedCallback.current?.(project)} onClose={() => { setShowProjects(false); projectCreatedCallback.current = undefined; }} />}
   </section>;
 }

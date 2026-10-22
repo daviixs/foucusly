@@ -326,9 +326,12 @@ export function App() {
     await api.createTemplate({ ...template, name }); await loadData(); notify("Template saved.");
   };
   const handleUseTemplate = async (id: string) => { await api.useTemplate(id); await loadData(); };
-  const handleCreateProject = async (name: string) => { const project = await api.createProject(name); await loadData(); return project; };
+  const handleCreateProject = async (name: string, color: string | null = null) => { const project = await api.createProject(name, color); await loadData(); return project; };
   const handleRenameProject = async (id: string, name: string) => { await api.renameProject(id, name); await loadData(); };
+  const handleUpdateProjectColor = async (id: string, color: string | null) => { await api.updateProject(id, { color }); await loadData(); };
   const handleArchiveProject = async (id: string) => { await api.archiveProject(id); await loadData(); };
+  const handleRestoreProject = async (id: string) => { await api.restoreProject(id); await loadData(); };
+  const handleReorderTasks = async (order: string[]) => { const updated = await api.reorderTasks(order); setData((current) => current ? { ...current, tasks: updated.tasks } : current); };
 
   const selectMode = (mode: TimerMode) => {
     if (!timer || !data) return;
@@ -374,7 +377,7 @@ export function App() {
         />
         <main className="focus-main">
           <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} />
-          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} templates={shownData.templates} activeTaskId={shownTimer.activeTaskId} visible={shownData.settings.tasksVisible} hourFormat={shownData.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onUseTemplate={handleUseTemplate} onCreateTemplate={handleCreateTemplate} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onArchiveProject={handleArchiveProject} />
+          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} templates={shownData.templates} activeTaskId={shownTimer.activeTaskId} visible={shownData.settings.tasksVisible} hourFormat={shownData.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onReorder={handleReorderTasks} onUseTemplate={handleUseTemplate} onCreateTemplate={handleCreateTemplate} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onUpdateProjectColor={handleUpdateProjectColor} onArchiveProject={handleArchiveProject} onRestoreProject={handleRestoreProject} />
         </main>
       </div>
     </div>
