@@ -6,5 +6,5 @@ import { parseReportQuery } from "../report-query.js";
 interface Options { db: AppDatabase; }
 
 export const reportSummaryRoutes: FastifyPluginAsync<Options> = async (app, { db }) => {
-  app.get("/api/reports", async (request) => getReportSummary(db, parseReportQuery(request.query)));
+  app.get("/api/reports", async (request) => getReportSummary(db, request.headers["x-profile-id"] as string, parseReportQuery(request.query)));
 };

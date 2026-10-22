@@ -12,6 +12,6 @@ export const reportRankingRoutes: FastifyPluginAsync<Options> = async (app, { db
     const query = request.query as Record<string, unknown>;
     const reportQuery = parseReportQuery(query);
     const { by } = rankingQuerySchema.parse(query);
-    return { by, entries: getReportRanking(db, reportQuery, by) };
+    return { by, entries: getReportRanking(db, request.headers["x-profile-id"] as string, reportQuery, by) };
   });
 };

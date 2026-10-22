@@ -29,13 +29,13 @@ function zonedMidnightUtc(day: string) {
   return new Date(guess).toISOString();
 }
 
-function boundsFor(db: AppDatabase, { period, date }: ReportQuery): Bounds {
+function boundsFor(db: AppDatabase, profileId: string, { period, date }: ReportQuery): Bounds {
   const [year, month, day] = date.split("-").map(Number);
   const selected = dateFromParts(year, month, day);
   let start = selected;
   let dayCount = 1;
   if (period === "week") {
-    const weekStartsOn = readSettings(db).weekStartsOn;
+    const weekStartsOn = readSettings(db, profileId).weekStartsOn;
     start = shiftDays(selected, -((selected.getUTCDay() - weekStartsOn + 7) % 7));
     dayCount = 7;
   } else if (period === "month") {
@@ -53,12 +53,12 @@ function boundsFor(db: AppDatabase, { period, date }: ReportQuery): Bounds {
   };
 }
 
-function readSessions(db: AppDatabase, bounds: Bounds): SessionRecord[] {
+function readSessions(db: AppDatabase, profileId: string, bounds: Bounds): SessionRecord[] {
   return db.prepare(`SELECT id, mode, started_at AS startedAt, ended_at AS endedAt,
       duration_seconds AS durationSeconds, task_id AS taskId, task_title AS taskTitle,
       project_id AS projectId
-    FROM sessions WHERE mode = 'pomodoro' AND ended_at >= ? AND ended_at < ? ORDER BY ended_at DESC`)
-    .all(bounds.startUtc, bounds.endUtc) as SessionRecord[];
+    FROM sessions WHERE profile_id=? AND mode = 'pomodoro' AND ended_at >= ? AND ended_at < ? ORDER BY ended_at DESC`)
+    .all(profileId, bounds.startUtc, bounds.endUtc) as SessionRecord[];
 }
 
 function localDay(timestamp: string) {
@@ -93,8 +93,8 @@ function bucketKey(period: ReportPeriod, timestamp: string) {
   return date;
 }
 
-function streakDays(db: AppDatabase) {
-  const rows = db.prepare("SELECT ended_at AS endedAt FROM sessions WHERE mode='pomodoro'").all() as Array<{ endedAt: string }>;
+function streakDays(db: AppDatabase, profileId: string) {
+  const rows = db.prepare("SELECT ended_at AS endedAt FROM sessions WHERE profile_id=? AND mode='pomodoro'").all(profileId) as Array<{ endedAt: string }>;
   const days = new Set(rows.map(({ endedAt }) => localDay(endedAt)));
   const todayParts = zonedParts(new Date());
   let cursor = dateFromParts(todayParts.year, todayParts.month, todayParts.day);
@@ -103,9 +103,9 @@ function streakDays(db: AppDatabase) {
   return streak;
 }
 
-export function getReportSummary(db: AppDatabase, query: ReportQuery): ReportData {
-  const bounds = boundsFor(db, query);
-  const sessions = readSessions(db, bounds);
+export function getReportSummary(db: AppDatabase, profileId: string, query: ReportQuery): ReportData {
+  const bounds = boundsFor(db, profileId, query);
+  const sessions = readSessions(db, profileId, bounds);
   const timeline = reportBuckets(query.period, bounds);
   const timelineByKey = new Map(timeline.map((bucket) => [bucket.key, bucket]));
   const projects = new Map<string, ProjectReport>();
@@ -120,7 +120,7 @@ export function getReportSummary(db: AppDatabase, query: ReportQuery): ReportDat
     project.sessions++;
     projects.set(key, project);
   }
-  const projectRows = db.prepare("SELECT id, name FROM projects").all() as Array<{ id: string; name: string }>;
+  const projectRows = db.prepare("SELECT id, name FROM projects WHERE profile_id=?").all(profileId) as Array<{ id: string; name: string }>;
   const projectNames = new Map(projectRows.map(({ id, name }) => [id, name]));
   for (const item of projects.values()) if (item.projectId) item.projectName = projectNames.get(item.projectId) ?? item.projectName;
   const focusSeconds = sessions.reduce((sum, item) => sum + item.durationSeconds, 0);
@@ -128,25 +128,25 @@ export function getReportSummary(db: AppDatabase, query: ReportQuery): ReportDat
     period: query.period, startDate: bounds.startDate, endDate: bounds.endDate,
     focusSeconds, focusSessions: sessions.length,
     activeDays: new Set(sessions.map((session) => localDay(session.endedAt))).size,
-    currentStreak: streakDays(db), timeline,
+    currentStreak: streakDays(db, profileId), timeline,
     projects: [...projects.values()].sort((a, b) => b.focusSeconds - a.focusSeconds || a.projectName.localeCompare(b.projectName))
   };
 }
 
-export function getReportDetail(db: AppDatabase, query: ReportQuery): DetailedSession[] {
-  const bounds = boundsFor(db, query);
+export function getReportDetail(db: AppDatabase, profileId: string, query: ReportQuery): DetailedSession[] {
+  const bounds = boundsFor(db, profileId, query);
   return db.prepare(`SELECT s.id, s.mode, s.started_at AS startedAt, s.ended_at AS endedAt,
       s.duration_seconds AS durationSeconds, s.task_id AS taskId,
       COALESCE(s.task_title, t.title) AS taskTitle, s.project_id AS projectId,
       COALESCE(p.name, CASE WHEN s.project_id IS NULL THEN 'No project' ELSE 'Archived project' END) AS projectName
     FROM sessions s LEFT JOIN tasks t ON t.id=s.task_id LEFT JOIN projects p ON p.id=s.project_id
-    WHERE s.mode='pomodoro' AND s.ended_at >= ? AND s.ended_at < ? ORDER BY s.ended_at DESC`)
-    .all(bounds.startUtc, bounds.endUtc) as DetailedSession[];
+    WHERE s.profile_id=? AND s.mode='pomodoro' AND s.ended_at >= ? AND s.ended_at < ? ORDER BY s.ended_at DESC`)
+    .all(profileId, bounds.startUtc, bounds.endUtc) as DetailedSession[];
 }
 
-export function getReportRanking(db: AppDatabase, query: ReportQuery, by: RankingBy): RankingEntry[] {
-  const sessions = readSessions(db, boundsFor(db, query));
-  const projectNames = new Map((db.prepare("SELECT id, name FROM projects").all() as Array<{ id: string; name: string }>).map(({ id, name }) => [id, name]));
+export function getReportRanking(db: AppDatabase, profileId: string, query: ReportQuery, by: RankingBy): RankingEntry[] {
+  const sessions = readSessions(db, profileId, boundsFor(db, profileId, query));
+  const projectNames = new Map((db.prepare("SELECT id, name FROM projects WHERE profile_id=?").all(profileId) as Array<{ id: string; name: string }>).map(({ id, name }) => [id, name]));
   const grouped = new Map<string, RankingEntry>();
   for (const session of sessions) {
     if (by === "task" && !session.taskId) continue;
