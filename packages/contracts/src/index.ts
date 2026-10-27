@@ -28,14 +28,8 @@ export interface Profile {
   createdAt: string;
 }
 
-export interface TaskTemplate {
-  id: string;
-  name: string;
-  title: string;
-  note: string;
-  estimatePomos: number;
-  createdAt: string;
-}
+export const TASK_BULK_ACTIONS = ["clear-finished", "clear-pomos", "clear-all"] as const;
+export type TaskBulkAction = typeof TASK_BULK_ACTIONS[number];
 
 export interface Settings {
   pomodoroMinutes: number;
@@ -56,7 +50,6 @@ export interface Settings {
   darkModeWhenRunning: boolean;
   notificationReminderMinutes: number;
   weekStartsOn: 0 | 1;
-  tasksVisible: boolean;
 }
 
 export interface TimerState {
@@ -88,7 +81,6 @@ export interface BootstrapData {
   profile: Profile;
   tasks: Task[];
   projects: Project[];
-  templates: TaskTemplate[];
   settings: Settings;
   timer: TimerState;
 }
@@ -150,8 +142,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hourFormat: "24-hour",
   darkModeWhenRunning: false,
   notificationReminderMinutes: 0,
-  weekStartsOn: 1,
-  tasksVisible: true
+  weekStartsOn: 1
 };
 
 export function durationForMode(settings: Settings, mode: TimerMode): number {

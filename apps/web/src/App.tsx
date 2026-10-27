@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwise, Crown, Keyboard, Trash, X } from "@phosphor-icons/react";
-import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Profile, type Settings, type Task, type TaskTemplate, type TimerMode, type TimerState } from "@foucusly/contracts";
+import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Profile, type Settings, type Task, type TaskBulkAction, type TimerMode, type TimerState } from "@foucusly/contracts";
 import { api } from "./api";
 import { Header } from "./components/Header";
 import { ReportDialog } from "./components/ReportDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import CloudBackdrop from "./components/CloudBackdrop";
 import DarkStarfield from "./components/DarkStarfield";
-import { TasksPanel } from "./components/TasksPanel";
+import { TasksPanel } from "./components/tasks/TasksPanel";
 import { TimerPanel } from "./components/TimerPanel";
+import { playAlarm } from "./audio/alarm";
+import { installAudioUnlock } from "./audio/engine";
+import { startFocusSound } from "./audio/focusSound";
 import { ProfileGate } from "./components/ProfileGate";
 
 const freshTimer = (settings: Settings, mode: TimerMode, activeTaskId: string | null, cyclePomos: number): TimerState => ({
@@ -128,54 +131,11 @@ export function App() {
   };
   useEffect(() => { timerRef.current = timer; }, [timer]);
 
+  useEffect(() => installAudioUnlock(), []);
+
   useEffect(() => {
-    const sound = data?.settings.focusSound;
-    const volume = data?.settings.focusVolume ?? 0;
-    if (!timer?.running || !sound || sound === "None" || volume === 0) return;
-    const AudioContextClass = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const context = new AudioContextClass();
-    const source = context.createBufferSource();
-    const filter = context.createBiquadFilter();
-    const gain = context.createGain();
-    const buffer = context.createBuffer(1, context.sampleRate * 3, context.sampleRate);
-    const channel = buffer.getChannelData(0);
-    for (let index = 0; index < channel.length; index++) channel[index] = Math.random() * 2 - 1;
-    source.buffer = buffer;
-    source.loop = true;
-    filter.type = sound === "Cafe" ? "bandpass" : "lowpass";
-    filter.frequency.value = sound === "Rain" ? 1900 : sound === "Cafe" ? 1250 : sound === "Forest" ? 1150 : 9500;
-    filter.Q.value = sound === "Cafe" ? 0.65 : 0.7;
-    gain.gain.value = volume / 1000;
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(context.destination);
-    source.start();
-    let birds: number | undefined;
-    if (sound === "Forest") {
-      const chirp = () => {
-        const oscillator = context.createOscillator();
-        const envelope = context.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(2100, context.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(1450, context.currentTime + 0.16);
-        envelope.gain.setValueAtTime(0, context.currentTime);
-        envelope.gain.linearRampToValueAtTime(volume / 1600, context.currentTime + 0.025);
-        envelope.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.2);
-        oscillator.connect(envelope);
-        envelope.connect(context.destination);
-        oscillator.start();
-        oscillator.stop(context.currentTime + 0.21);
-      };
-      birds = window.setInterval(chirp, 6200);
-      window.setTimeout(chirp, 1100);
-    }
-    void context.resume();
-    return () => {
-      if (birds !== undefined) window.clearInterval(birds);
-      source.stop();
-      void context.close();
-    };
+    if (!timer?.running || !data) return;
+    return startFocusSound(data.settings.focusSound, data.settings.focusVolume);
   }, [timer?.running, data?.settings.focusSound, data?.settings.focusVolume]);
 
   const persistTimer = useCallback(async (next: TimerState) => {
@@ -185,38 +145,17 @@ export function App() {
     catch (error) { notify(`Timer could not be saved: ${(error as Error).message}`); }
   }, [notify]);
 
-  const soundAlarm = useCallback(() => {
-    if (!data || data.settings.alarmVolume <= 0 || data.settings.alarmSound === "None") return;
-    try {
-      const AudioContextClass = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextClass) return;
-      const context = new AudioContextClass();
-      const play = (count: number) => {
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        oscillator.type = data.settings.alarmSound === "Kitchen" ? "sine" : "triangle";
-        oscillator.frequency.value = data.settings.alarmSound === "Bell" ? 880 : 660;
-        gain.gain.value = data.settings.alarmVolume / 600;
-        oscillator.connect(gain); gain.connect(context.destination);
-        oscillator.start(); oscillator.stop(context.currentTime + 0.2);
-        if (count > 1) window.setTimeout(() => play(count - 1), 400);
-        else window.setTimeout(() => void context.close(), 800);
-      };
-      play(data.settings.alarmRepeat);
-    } catch { /* Audio may be unavailable until the browser receives a user gesture. */ }
-  }, [data]);
-
   const finishSession = useCallback(async (current: TimerState) => {
     if (finishing.current) return;
     finishing.current = true;
     const endedAt = new Date().toISOString();
     const settings = data?.settings ?? DEFAULT_SETTINGS;
     const duration = durationForMode(settings, current.mode);
+    void playAlarm(settings);
     try {
       if (current.currentSessionId && current.sessionStartedAt) {
         await api.completeSession({ id: current.currentSessionId, mode: current.mode, startedAt: current.sessionStartedAt, endedAt, durationSeconds: duration, taskId: current.currentSessionTaskId, taskTitle: current.currentSessionTaskTitle, projectId: current.currentSessionProjectId });
       }
-      soundAlarm();
       if (settings.notificationReminderMinutes > 0 && "Notification" in window && Notification.permission === "granted") {
         new Notification(current.mode === "pomodoro" ? "Pomodoro complete" : "Break complete", { body: current.mode === "pomodoro" ? "Time for a short break." : "Ready to focus again?" });
       }
@@ -248,7 +187,7 @@ export function App() {
       const next = { ...current, running: false, endsAt: null, remainingSeconds: 0 };
       await persistTimer(next);
     } finally { finishing.current = false; }
-  }, [data, loadData, notify, persistTimer, soundAlarm]);
+  }, [data, loadData, notify, persistTimer]);
 
   useEffect(() => {
     if (!timer?.running || timer.endsAt === null) return;
@@ -314,18 +253,13 @@ export function App() {
   };
   const handleTaskUpdate = async (id: string, patch: Partial<Task>) => { await api.updateTask(id, patch); await loadData(); };
   const handleTaskDelete = async (id: string) => { await api.deleteTask(id); if (timer?.activeTaskId === id && timer) await persistTimer({ ...timer, activeTaskId: null }); await loadData(); };
-  const handleAction = async (action: "clear-finished" | "clear-all" | "clear-pomos" | "toggle-hidden") => {
+  const handleAction = async (action: TaskBulkAction) => {
     const updated = await api.taskAction(action);
     setData(updated);
     if (timer?.activeTaskId && !updated.tasks.some((task) => task.id === timer.activeTaskId)) {
       await persistTimer({ ...timer, activeTaskId: null });
     }
   };
-  const handleCreateTemplate = async (draft: Pick<Task, "title" | "note" | "estimatePomos" | "projectId">, name: string) => {
-    const { projectId: _projectId, ...template } = draft;
-    await api.createTemplate({ ...template, name }); await loadData(); notify("Template saved.");
-  };
-  const handleUseTemplate = async (id: string) => { await api.useTemplate(id); await loadData(); };
   const handleCreateProject = async (name: string, color: string | null = null) => { const project = await api.createProject(name, color); await loadData(); return project; };
   const handleRenameProject = async (id: string, name: string) => { await api.renameProject(id, name); await loadData(); };
   const handleUpdateProjectColor = async (id: string, color: string | null) => { await api.updateProject(id, { color }); await loadData(); };
@@ -348,7 +282,7 @@ export function App() {
   if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else void api.profiles().then(setProfiles).catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
   if (profile && (!data || !timer)) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
 
-  const shownData = data ?? { tasks: [], projects: [], templates: [], settings: DEFAULT_SETTINGS };
+  const shownData = data ?? { tasks: [], projects: [], settings: DEFAULT_SETTINGS };
   const shownTimer = timer ?? freshTimer(DEFAULT_SETTINGS, "pomodoro", null, 0);
   const shellTheme = shownData.settings.themeColor ?? "red";
   const darkRunning = Boolean(shownData.settings.darkModeWhenRunning && shownTimer.running);
@@ -377,7 +311,7 @@ export function App() {
         />
         <main className="focus-main">
           <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} />
-          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} templates={shownData.templates} activeTaskId={shownTimer.activeTaskId} visible={shownData.settings.tasksVisible} hourFormat={shownData.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onReorder={handleReorderTasks} onUseTemplate={handleUseTemplate} onCreateTemplate={handleCreateTemplate} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onUpdateProjectColor={handleUpdateProjectColor} onArchiveProject={handleArchiveProject} onRestoreProject={handleRestoreProject} />
+          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} activeTaskId={shownTimer.activeTaskId} hourFormat={shownData.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onReorder={handleReorderTasks} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onUpdateProjectColor={handleUpdateProjectColor} onArchiveProject={handleArchiveProject} onRestoreProject={handleRestoreProject} />
         </main>
       </div>
     </div>
@@ -548,9 +482,6 @@ export function App() {
               </li>
               <li>
                 <strong>Deep Ranking & Analytics:</strong> Export full CSV reports with detailed project timeline insights.
-              </li>
-              <li>
-                <strong>Unlimited Templates:</strong> Save repeatable daily task routines and templates without limits.
               </li>
             </ul>
           </div>

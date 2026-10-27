@@ -1,4 +1,4 @@
-import type { BootstrapData, DetailedSession, Profile, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskTemplate, TimerState } from "@foucusly/contracts";
+import type { BootstrapData, DetailedSession, Profile, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskBulkAction, TimerState } from "@foucusly/contracts";
 
 let activeProfileId = "";
 const apiOrigin = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
@@ -28,10 +28,7 @@ export const api = {
   updateTask: (id: string, patch: Partial<Task>) => request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: "DELETE" }),
   reorderTasks: (order: string[]) => request<BootstrapData>("/tasks/reorder", { method: "PUT", body: JSON.stringify({ order }) }),
-  taskAction: (action: "clear-finished" | "clear-all" | "clear-pomos" | "toggle-hidden") => request<BootstrapData>(`/tasks/actions/${action}`, { method: "POST" }),
-  createTemplate: (template: Pick<TaskTemplate, "name" | "title" | "note" | "estimatePomos">) => request<TaskTemplate>("/templates", { method: "POST", body: JSON.stringify(template) }),
-  useTemplate: (id: string) => request<Task>(`/templates/${id}/use`, { method: "POST" }),
-  deleteTemplate: (id: string) => request<void>(`/templates/${id}`, { method: "DELETE" }),
+  taskAction: (action: TaskBulkAction) => request<BootstrapData>(`/tasks/actions/${action}`, { method: "POST" }),
   createProject: (name: string, color: string | null = null) => request<Project>("/projects", { method: "POST", body: JSON.stringify({ name, color }) }),
   updateProject: (id: string, patch: Pick<Project, "color">) => request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   archivedProjects: () => request<Project[]>("/projects/archived"),
