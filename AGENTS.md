@@ -19,7 +19,7 @@ The detailed system map is in [architecture.md](architecture.md).
 
 ## Technology stack
 
-- **Language and package management:** TypeScript 5.9, native ESM, npm workspaces and npm lockfile.
+- **Language and package management:** TypeScript 5.9, native ESM, Bun 1.3 workspaces and `bun.lock` (hoisted linker via `bunfig.toml`). Node.js 22 remains the runtime for the API, `tsx`, and Vitest because `better-sqlite3` is a Node native addon.
 - **Frontend:** React 19, React DOM, Vite 7, Tailwind CSS 4, Phosphor React icons, and Roboto/Roboto Mono font packages.
 - **Backend:** Node.js, Fastify 5, `@fastify/cors`, `@fastify/rate-limit`, and Zod 4 request validation.
 - **Persistence:** `better-sqlite3` with a file-backed SQLite database, WAL mode, foreign keys, explicit schema setup, and in-place compatibility migrations.
@@ -55,18 +55,18 @@ architecture.md                  detailed technical architecture
 Run commands from the repository root unless a package-specific command is required.
 
 ```sh
-npm install
-npm run dev
-npm run dev:api
-npm run dev:web
-npm run typecheck
-npm run build
-npm start
+bun install
+bun run dev
+bun run dev:api
+bun run dev:web
+bun run typecheck
+bun run build
+bun run start
 ```
 
-`npm run dev` starts the API on port `3001` and the Vite frontend on port `5173`. Vite proxies `/api` to the local API. The default database path is `data/foucusly.sqlite`; override it with `DATABASE_PATH` when needed.
+`bun run dev` starts the API on port `3001` and the Vite frontend on port `5173`. Vite proxies `/api` to the local API. The default database path is `data/foucusly.sqlite`; override it with `DATABASE_PATH` when needed.
 
-Before handing off a change, run `npm run typecheck`. Run `npm run build` for changes that affect build configuration, package boundaries, or production behavior.
+Before handing off a change, run `bun run typecheck`. Run `bun run build` for changes that affect build configuration, package boundaries, or production behavior.
 
 ## Working rules
 

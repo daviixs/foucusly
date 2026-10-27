@@ -95,13 +95,13 @@ Para empacotamento, CI/CD, deploy no Coolify e recuperação de releases, veja o
 
 ## Comece em minutos
 
-**Pré-requisito:** Node.js compatível com as dependências do projeto e npm.
+**Pré-requisito:** [Bun](https://bun.com) 1.3+ para dependências e scripts, e Node.js 22+ como runtime da API.
 
 ```sh
 git clone <seu-repositorio>
 cd pomofocus
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 Abra [http://localhost:5173](http://localhost:5173) para a experiência completa ou [http://localhost:5173/app](http://localhost:5173/app) para a página do timer. A API inicia em `http://localhost:3001`.
@@ -109,24 +109,24 @@ Abra [http://localhost:5173](http://localhost:5173) para a experiência completa
 O banco de dados é criado em `data/foucusly.sqlite` por padrão. Para usar outro caminho:
 
 ```sh
-DATABASE_PATH=/caminho/para/foucusly.sqlite npm run dev:api
+DATABASE_PATH=/caminho/para/foucusly.sqlite bun run dev:api
 ```
 
 ## Comandos
 
 | Comando | Descrição |
 | --- | --- |
-| `npm run dev` | Inicia API e frontend em modo de desenvolvimento. |
-| `npm run dev:api` | Inicia somente a API Fastify com recarregamento. |
-| `npm run dev:web` | Inicia somente o Vite. |
-| `npm run typecheck` | Verifica os tipos de todos os workspaces. |
-| `npm run build` | Compila contratos, API e frontend. |
-| `npm start` | Inicia a API compilada. |
+| `bun run dev` | Inicia API e frontend em modo de desenvolvimento. |
+| `bun run dev:api` | Inicia somente a API Fastify com recarregamento. |
+| `bun run dev:web` | Inicia somente o Vite. |
+| `bun run typecheck` | Verifica os tipos de todos os workspaces. |
+| `bun run build` | Compila contratos, API e frontend. |
+| `bun run start` | Inicia a API compilada. |
 
 ## Produção
 
-1. Execute `npm run build`.
-2. Inicie a API com `npm start`.
+1. Execute `bun run build`.
+2. Inicie a API com `bun run start`.
 3. Sirva `apps/web/dist` em um servidor estático.
 4. Configure esse servidor para encaminhar `/api` à API Fastify.
 5. Faça backup de `data/foucusly.sqlite`: ele é a fonte de verdade dos dados da instalação.

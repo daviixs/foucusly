@@ -1,0 +1,3 @@
+[install]
+# Keep the npm-style hoisted node_modules layout the Dockerfiles copy between stages.
+linker = "hoisted"

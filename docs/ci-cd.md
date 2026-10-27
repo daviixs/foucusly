@@ -59,10 +59,10 @@ O workflow está em [`.github/workflows/ci-cd.yml`](../.github/workflows/ci-cd.y
 O job `Verify` executa, na ordem:
 
 ```sh
-npm ci
-npm run typecheck
-npm test
-npm run build
+bun install --frozen-lockfile
+bun run typecheck
+bun run test
+bun run build
 ```
 
 Os testes existentes da API usam SQLite em memória. Não há serviço externo de banco no CI.

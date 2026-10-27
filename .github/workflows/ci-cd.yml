@@ -23,22 +23,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node stays the runtime for the API, tsx and Vitest; Bun manages packages and scripts.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Typecheck
-        run: npm run typecheck
+        run: bun run typecheck
 
       - name: Test API
-        run: npm test
+        run: bun run test
 
       - name: Build workspaces
-        run: npm run build
+        run: bun run build
 
   publish:
     name: Publish images

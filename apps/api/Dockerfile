@@ -3,19 +3,21 @@ FROM node:22-alpine AS build
 WORKDIR /app
 
 RUN apk add --no-cache python3 make g++
+COPY --from=oven/bun:1.3.14-alpine /usr/local/bin/bun /usr/local/bin/bun
 
-COPY package.json package-lock.json ./
+COPY package.json bun.lock bunfig.toml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
-RUN npm ci
+RUN bun install --frozen-lockfile
 
 COPY apps/api apps/api
 COPY packages/contracts packages/contracts
 
-RUN npm run build --workspace packages/contracts \
-  && npm run build --workspace apps/api \
-  && npm prune --omit=dev
+RUN bun run --cwd packages/contracts build \
+  && bun run --cwd apps/api build \
+  && rm -rf node_modules \
+  && bun install --frozen-lockfile --production
 
 FROM node:22-alpine AS production
 
