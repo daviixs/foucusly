@@ -6,7 +6,8 @@ const apiOrigin = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
 async function request<T>(path: string, init?: RequestInit, profileScoped = true): Promise<T> {
   const response = await fetch(`${apiOrigin}/api${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...(profileScoped && activeProfileId ? { "x-profile-id": activeProfileId } : {}), ...init?.headers }
+    // Fastify rejects an empty body declared as JSON, so bodiless POST/DELETE calls must omit the header.
+    headers: { ...(init?.body !== undefined ? { "content-type": "application/json" } : {}), ...(profileScoped && activeProfileId ? { "x-profile-id": activeProfileId } : {}), ...init?.headers }
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
