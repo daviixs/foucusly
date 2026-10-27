@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="apps/web/src/assets/logo.png" alt="Foucusly" width="120" height="120" />
+
 # Foucusly
 
 ### Focus deliberately. Finish consistently.
