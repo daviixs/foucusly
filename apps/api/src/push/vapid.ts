@@ -1,4 +1,4 @@
-import { generateVAPIDKeys } from "web-push";
+import webpush from "web-push";
 import { getConfigValue, putConfigValue, type AppDatabase } from "../db.js";
 
 export interface VapidKeys {
@@ -25,7 +25,7 @@ export function getVapidKeys(db: AppDatabase): VapidKeys {
   if (envPublic && envPrivate) return { publicKey: envPublic, privateKey: envPrivate };
   const stored = parseKeys(getConfigValue(db, CONFIG_KEY));
   if (stored) return stored;
-  const generated = generateVAPIDKeys();
+  const generated = webpush.generateVAPIDKeys();
   const keys = { publicKey: generated.publicKey, privateKey: generated.privateKey };
   putConfigValue(db, CONFIG_KEY, JSON.stringify(keys));
   return keys;
