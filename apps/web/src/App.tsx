@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwise, Crown, Keyboard, Trash, X } from "@phosphor-icons/react";
-import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Profile, type Settings, type Task, type TaskBulkAction, type TimerMode, type TimerState } from "@foucusly/contracts";
+import { ADVANCE_REMINDER_MIN_REMAINING_MS, DEFAULT_SETTINGS, advanceReminderCopy, durationForMode, type BootstrapData, type Profile, type Settings, type Task, type TaskBulkAction, type TimerMode, type TimerState } from "@foucusly/contracts";
 import { api } from "./api";
 import { Header } from "./components/Header";
 import { ReportDialog } from "./components/ReportDialog";
@@ -19,6 +19,42 @@ const freshTimer = (settings: Settings, mode: TimerMode, activeTaskId: string | 
   currentSessionId: null, sessionStartedAt: null, currentSessionTaskId: null, currentSessionTaskTitle: null, currentSessionProjectId: null
 });
 
+function advanceTimer(current: TimerState, settings: Settings, tasks: Task[], countFocus: boolean): TimerState {
+  const cyclePomos = countFocus && current.mode === "pomodoro" ? current.cyclePomos + 1 : current.cyclePomos;
+  const nextMode: TimerMode = current.mode === "pomodoro"
+    ? (countFocus ? (cyclePomos % settings.longBreakInterval === 0 ? "longBreak" : "shortBreak") : "shortBreak")
+    : "pomodoro";
+  const autoStart = nextMode === "pomodoro" ? settings.autoStartPomodoros : settings.autoStartBreaks;
+  const nextDuration = durationForMode(settings, nextMode);
+  const activeTask = tasks.find((task) => task.id === current.activeTaskId);
+  return {
+    mode: nextMode,
+    remainingSeconds: nextDuration,
+    running: autoStart,
+    endsAt: autoStart ? Date.now() + nextDuration * 1000 : null,
+    cyclePomos,
+    activeTaskId: current.activeTaskId,
+    currentSessionId: autoStart ? crypto.randomUUID() : null,
+    sessionStartedAt: autoStart ? new Date().toISOString() : null,
+    currentSessionTaskId: autoStart ? current.activeTaskId : null,
+    currentSessionTaskTitle: autoStart ? activeTask?.title ?? null : null,
+    currentSessionProjectId: autoStart ? activeTask?.projectId ?? null : null
+  };
+}
+
+function notifyBeforeEnd(current: TimerState, reminderMinutes: number, remindedEndsAt: { current: number | null }) {
+  if (reminderMinutes <= 0 || !current.running || current.endsAt === null) return;
+  if (remindedEndsAt.current === current.endsAt) return;
+  const remainingMs = current.endsAt - Date.now();
+  if (remainingMs <= ADVANCE_REMINDER_MIN_REMAINING_MS) return;
+  if (Date.now() < current.endsAt - reminderMinutes * 60_000) return;
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  remindedEndsAt.current = current.endsAt;
+  const copy = advanceReminderCopy(current.mode, remainingMs, current.currentSessionTaskTitle);
+  try { new Notification(copy.title, { body: copy.body }); }
+  catch { remindedEndsAt.current = null; }
+}
+
 export function App() {
   const isSimplePage = window.location.pathname === "/app";
   const [data, setData] = useState<BootstrapData | null>(null);
@@ -33,9 +69,10 @@ export function App() {
   const [timer, setTimer] = useState<TimerState | null>(null);
   const [now, setNow] = useState(Date.now());
   const [loadingError, setLoadingError] = useState("");
-  const [dialog, setDialog] = useState<"settings" | "report" | "signin" | null>(null);
+  const [dialog, setDialog] = useState<"settings" | "report" | null>(null);
   const [toast, setToast] = useState("");
   const finishing = useRef(false);
+  const remindedEndsAt = useRef<number | null>(null);
   const timerRef = useRef<TimerState | null>(null);
 
   const notify = useCallback((message: string) => {
@@ -159,26 +196,7 @@ export function App() {
       if (settings.notificationReminderMinutes > 0 && "Notification" in window && Notification.permission === "granted") {
         new Notification(current.mode === "pomodoro" ? "Pomodoro complete" : "Break complete", { body: current.mode === "pomodoro" ? "Time for a short break." : "Ready to focus again?" });
       }
-      const cyclePomos = current.mode === "pomodoro" ? current.cyclePomos + 1 : current.cyclePomos;
-      const nextMode: TimerMode = current.mode === "pomodoro"
-        ? (cyclePomos % settings.longBreakInterval === 0 ? "longBreak" : "shortBreak")
-        : "pomodoro";
-      const autoStart = nextMode === "pomodoro" ? settings.autoStartPomodoros : settings.autoStartBreaks;
-      const nextDuration = durationForMode(settings, nextMode);
-      const startedAt = autoStart ? new Date().toISOString() : null;
-      const next: TimerState = {
-        mode: nextMode,
-        remainingSeconds: nextDuration,
-        running: autoStart,
-        endsAt: autoStart ? Date.now() + nextDuration * 1000 : null,
-        cyclePomos,
-        activeTaskId: current.activeTaskId,
-        currentSessionId: autoStart ? crypto.randomUUID() : null,
-        sessionStartedAt: startedAt,
-        currentSessionTaskId: autoStart ? current.activeTaskId : null,
-        currentSessionTaskTitle: autoStart ? data?.tasks.find((task) => task.id === current.activeTaskId)?.title ?? null : null,
-        currentSessionProjectId: autoStart ? data?.tasks.find((task) => task.id === current.activeTaskId)?.projectId ?? null : null
-      };
+      const next = advanceTimer(current, settings, data?.tasks ?? [], true);
       await persistTimer(next);
       await loadData();
       notify(current.mode === "pomodoro" ? "Focus session complete. Time for a break." : "Break complete. Ready for another Pomodoro?");
@@ -189,16 +207,34 @@ export function App() {
     } finally { finishing.current = false; }
   }, [data, loadData, notify, persistTimer]);
 
+  const reminderMinutes = data?.settings.notificationReminderMinutes ?? 0;
+
   useEffect(() => {
     if (!timer?.running || timer.endsAt === null) return;
     const tick = () => {
       setNow(Date.now());
-      if (Date.now() >= (timerRef.current?.endsAt ?? Infinity)) void finishSession(timerRef.current!);
+      const current = timerRef.current;
+      if (!current) return;
+      notifyBeforeEnd(current, reminderMinutes, remindedEndsAt);
+      if (Date.now() >= (current.endsAt ?? Infinity)) void finishSession(current);
     };
     tick();
     const interval = window.setInterval(tick, 250);
     return () => window.clearInterval(interval);
-  }, [timer?.running, timer?.endsAt, finishSession]);
+  }, [timer?.running, timer?.endsAt, finishSession, reminderMinutes]);
+
+  const skipSession = useCallback(async () => {
+    const current = timerRef.current;
+    if (!current || !data || finishing.current) return;
+    finishing.current = true;
+    try {
+      const next = advanceTimer(current, data.settings, data.tasks, false);
+      await persistTimer(next);
+      notify(current.mode === "pomodoro" ? "Focus skipped. Time for a break." : "Break skipped. Ready for another Pomodoro?");
+    } catch (error) {
+      notify(`Could not skip: ${(error as Error).message}`);
+    } finally { finishing.current = false; }
+  }, [data, notify, persistTimer]);
 
   const toggleTimer = () => {
     if (!timer || !data) return;
@@ -310,8 +346,8 @@ export function App() {
           }}
         />
         <main className="focus-main">
-          <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} />
-          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} activeTaskId={shownTimer.activeTaskId} hourFormat={shownData.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onReorder={handleReorderTasks} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onUpdateProjectColor={handleUpdateProjectColor} onArchiveProject={handleArchiveProject} onRestoreProject={handleRestoreProject} />
+          <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} longBreakInterval={shownData.settings.longBreakInterval} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} onSkip={() => { void skipSession(); }} />
+          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} activeTaskId={shownTimer.activeTaskId} hourFormat={shownData.settings.hourFormat} pomodoroMinutes={shownData.settings.pomodoroMinutes} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onReorder={handleReorderTasks} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onUpdateProjectColor={handleUpdateProjectColor} onArchiveProject={handleArchiveProject} onRestoreProject={handleRestoreProject} />
         </main>
       </div>
     </div>
@@ -366,7 +402,7 @@ export function App() {
             <h2 id="delete-account-title">Delete Account</h2>
             <p>
               Are you sure you want to permanently delete account <strong>{profile.username}</strong>?
-              All your tasks, projects, sessions, and settings will be permanently removed.
+              All your tasks, projects, sessions, settings, and notification subscriptions will be permanently removed.
             </p>
           </header>
           <footer className="dialog-footer">
