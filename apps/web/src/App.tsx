@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwise, Crown, Keyboard, Trash, X } from "@phosphor-icons/react";
-import { ADVANCE_REMINDER_MIN_REMAINING_MS, DEFAULT_SETTINGS, advanceReminderCopy, durationForMode, type BootstrapData, type Profile, type Settings, type Task, type TaskBulkAction, type TimerMode, type TimerState } from "@foucusly/contracts";
+import { ADVANCE_REMINDER_MIN_REMAINING_MS, DEFAULT_SETTINGS, NIGHT_ENDS_AT_HOUR, NIGHT_STARTS_AT_HOUR, advanceReminderCopy, durationForMode, isNightTime, type BootstrapData, type Profile, type Settings, type Task, type TaskBulkAction, type TimerMode, type TimerState } from "@foucusly/contracts";
 import { api } from "./api";
 import { Header } from "./components/Header";
 import { ReportDialog } from "./components/ReportDialog";
@@ -13,6 +13,15 @@ import { playAlarm } from "./audio/alarm";
 import { installAudioUnlock } from "./audio/engine";
 import { startFocusSound } from "./audio/focusSound";
 import { ProfileGate } from "./components/ProfileGate";
+
+const msUntilNextDayNightSwitch = (date: Date) => {
+  const next = new Date(date);
+  const hour = date.getHours();
+  if (hour < NIGHT_ENDS_AT_HOUR) next.setHours(NIGHT_ENDS_AT_HOUR, 0, 0, 0);
+  else if (hour < NIGHT_STARTS_AT_HOUR) next.setHours(NIGHT_STARTS_AT_HOUR, 0, 0, 0);
+  else { next.setDate(next.getDate() + 1); next.setHours(NIGHT_ENDS_AT_HOUR, 0, 0, 0); }
+  return Math.max(1000, next.getTime() - date.getTime());
+};
 
 const freshTimer = (settings: Settings, mode: TimerMode, activeTaskId: string | null, cyclePomos: number): TimerState => ({
   mode, remainingSeconds: durationForMode(settings, mode), running: false, endsAt: null, cyclePomos, activeTaskId,
@@ -68,6 +77,7 @@ export function App() {
   const [premiumDialogOpen, setPremiumDialogOpen] = useState(false);
   const [timer, setTimer] = useState<TimerState | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [isNight, setIsNight] = useState(() => isNightTime(new Date()));
   const [loadingError, setLoadingError] = useState("");
   const [dialog, setDialog] = useState<"settings" | "report" | null>(null);
   const [toast, setToast] = useState("");
@@ -169,6 +179,23 @@ export function App() {
   useEffect(() => { timerRef.current = timer; }, [timer]);
 
   useEffect(() => installAudioUnlock(), []);
+
+  useEffect(() => {
+    let timeout = 0;
+    const update = () => {
+      window.clearTimeout(timeout);
+      const current = new Date();
+      setIsNight(isNightTime(current));
+      timeout = window.setTimeout(update, msUntilNextDayNightSwitch(current));
+    };
+    const onVisibility = () => { if (document.visibilityState === "visible") update(); };
+    update();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearTimeout(timeout);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     if (!timer?.running || !data) return;
@@ -321,12 +348,15 @@ export function App() {
   const shownData = data ?? { tasks: [], projects: [], settings: DEFAULT_SETTINGS };
   const shownTimer = timer ?? freshTimer(DEFAULT_SETTINGS, "pomodoro", null, 0);
   const shellTheme = shownData.settings.themeColor ?? "red";
-  const darkRunning = Boolean(shownData.settings.darkModeWhenRunning && shownTimer.running);
+  const darkTheme = Boolean(
+    (shownData.settings.darkModeWhenRunning && shownTimer.running) ||
+    (shownData.settings.autoDarkAtNight && isNight)
+  );
 
-  return <div className={`app-shell theme-${shellTheme} ${darkRunning ? "dark-running" : ""}`}>
+  return <div className={`app-shell theme-${shellTheme} ${darkTheme ? "dark-running" : ""}`}>
     <div className="focus-area">
-      {darkRunning && <DarkStarfield />}
-      <CloudBackdrop dark={darkRunning} />
+      {darkTheme && <DarkStarfield />}
+      <CloudBackdrop dark={darkTheme} />
       <div className="app-container">
         <Header
           profile={profile}
