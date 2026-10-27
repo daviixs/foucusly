@@ -345,7 +345,7 @@ export function App() {
   };
   const setActiveTask = (id: string) => { if (timer) void persistTimer({ ...timer, activeTaskId: id }); };
 
-  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else void api.profiles().then(setProfiles).catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>npm run dev</code>.</small></div></main>;
+  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else void api.profiles().then(setProfiles).catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
   if (profile && (!data || !timer)) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
 
   const shownData = data ?? { tasks: [], projects: [], templates: [], settings: DEFAULT_SETTINGS };

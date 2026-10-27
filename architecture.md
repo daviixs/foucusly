@@ -135,4 +135,4 @@ SQLite is durable application data, not a cache. Back it up before upgrades or m
 - Add an API feature by defining Zod validation, enforcing profile scope, using prepared statements, and extending `apps/web/src/api.ts` before integrating a component.
 - Add a persisted field with a backward-compatible `db.ts` migration path and ensure old timer/settings JSON is still handled safely.
 - Change completion behavior only after considering duplicate session submissions, paused timers, task deletion/archive, and report correctness.
-- Run `npm run typecheck` for all changes, and `npm run build` when package or production boundaries are affected.
+- Run `bun run typecheck` for all changes, and `bun run build` when package or production boundaries are affected.

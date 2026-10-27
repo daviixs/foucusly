@@ -1,9 +1,10 @@
 import type { BootstrapData, DetailedSession, Profile, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskTemplate, TimerState } from "@foucusly/contracts";
 
 let activeProfileId = "";
+const apiOrigin = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
 
 async function request<T>(path: string, init?: RequestInit, profileScoped = true): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${apiOrigin}/api${path}`, {
     ...init,
     headers: { "content-type": "application/json", ...(profileScoped && activeProfileId ? { "x-profile-id": activeProfileId } : {}), ...init?.headers }
   });
