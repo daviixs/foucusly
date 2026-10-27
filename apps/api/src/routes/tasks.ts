@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { TASK_BULK_ACTIONS } from "@foucusly/contracts";
 import type { AppDatabase } from "../db.js";
-import { readBootstrap, readSettings, writeSettings } from "../db.js";
+import { readBootstrap } from "../db.js";
+import { runTaskBulkAction } from "../services/task-actions.js";
 
 interface TaskRoutesOptions { db: AppDatabase; }
 
@@ -20,6 +22,7 @@ const taskPatch = taskInput.partial().extend({
   sortOrder: z.number().int().optional()
 });
 const reorderInput = z.object({ order: z.array(z.string().uuid()).min(1).max(500) });
+const bulkActionParams = z.object({ action: z.enum(TASK_BULK_ACTIONS) });
 
 function taskBelongsToOwner(db: AppDatabase, projectId: string, owner: string): boolean {
   return Boolean(db.prepare("SELECT id FROM projects WHERE id=? AND profile_id=? AND archived_at IS NULL").get(projectId, owner));
@@ -88,14 +91,9 @@ export const taskRoutes: FastifyPluginAsync<TaskRoutesOptions> = async (app, { d
 
   app.post<{ Params: { action: string } }>("/api/tasks/actions/:action", { config: { rateLimit: taskRateLimit } }, async (request, reply) => {
     const owner = request.headers["x-profile-id"] as string;
-    const action = request.params.action;
-    if (action === "clear-finished") db.prepare("DELETE FROM tasks WHERE completed=1 AND profile_id=?").run(owner);
-    else if (action === "clear-all") db.prepare("DELETE FROM tasks WHERE profile_id=?").run(owner);
-    else if (action === "clear-pomos") db.prepare("UPDATE tasks SET completed_pomos=0 WHERE profile_id=?").run(owner);
-    else if (action === "toggle-hidden") {
-      const settings = readSettings(db, owner);
-      writeSettings(db, owner, { ...settings, tasksVisible: !settings.tasksVisible });
-    } else return reply.code(400).send({ error: "Unknown task action" });
+    const params = bulkActionParams.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Unknown task action" });
+    runTaskBulkAction(db, owner, params.data.action);
     return readBootstrap(db, owner);
   });
 };

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwise, Crown, Keyboard, Trash, X } from "@phosphor-icons/react";
-import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Profile, type Settings, type Task, type TaskTemplate, type TimerMode, type TimerState } from "@foucusly/contracts";
+import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Profile, type Settings, type Task, type TaskBulkAction, type TimerMode, type TimerState } from "@foucusly/contracts";
 import { api } from "./api";
 import { Header } from "./components/Header";
 import { ReportDialog } from "./components/ReportDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import CloudBackdrop from "./components/CloudBackdrop";
 import DarkStarfield from "./components/DarkStarfield";
-import { TasksPanel } from "./components/TasksPanel";
+import { TasksPanel } from "./components/tasks/TasksPanel";
 import { TimerPanel } from "./components/TimerPanel";
 import { ProfileGate } from "./components/ProfileGate";
 
@@ -314,18 +314,13 @@ export function App() {
   };
   const handleTaskUpdate = async (id: string, patch: Partial<Task>) => { await api.updateTask(id, patch); await loadData(); };
   const handleTaskDelete = async (id: string) => { await api.deleteTask(id); if (timer?.activeTaskId === id && timer) await persistTimer({ ...timer, activeTaskId: null }); await loadData(); };
-  const handleAction = async (action: "clear-finished" | "clear-all" | "clear-pomos" | "toggle-hidden") => {
+  const handleAction = async (action: TaskBulkAction) => {
     const updated = await api.taskAction(action);
     setData(updated);
     if (timer?.activeTaskId && !updated.tasks.some((task) => task.id === timer.activeTaskId)) {
       await persistTimer({ ...timer, activeTaskId: null });
     }
   };
-  const handleCreateTemplate = async (draft: Pick<Task, "title" | "note" | "estimatePomos" | "projectId">, name: string) => {
-    const { projectId: _projectId, ...template } = draft;
-    await api.createTemplate({ ...template, name }); await loadData(); notify("Template saved.");
-  };
-  const handleUseTemplate = async (id: string) => { await api.useTemplate(id); await loadData(); };
   const handleCreateProject = async (name: string, color: string | null = null) => { const project = await api.createProject(name, color); await loadData(); return project; };
   const handleRenameProject = async (id: string, name: string) => { await api.renameProject(id, name); await loadData(); };
   const handleUpdateProjectColor = async (id: string, color: string | null) => { await api.updateProject(id, { color }); await loadData(); };
@@ -348,7 +343,7 @@ export function App() {
   if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else void api.profiles().then(setProfiles).catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
   if (profile && (!data || !timer)) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
 
-  const shownData = data ?? { tasks: [], projects: [], templates: [], settings: DEFAULT_SETTINGS };
+  const shownData = data ?? { tasks: [], projects: [], settings: DEFAULT_SETTINGS };
   const shownTimer = timer ?? freshTimer(DEFAULT_SETTINGS, "pomodoro", null, 0);
   const shellTheme = shownData.settings.themeColor ?? "red";
   const darkRunning = Boolean(shownData.settings.darkModeWhenRunning && shownTimer.running);
@@ -377,7 +372,7 @@ export function App() {
         />
         <main className="focus-main">
           <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} />
-          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} templates={shownData.templates} activeTaskId={shownTimer.activeTaskId} visible={shownData.settings.tasksVisible} hourFormat={shownData.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onReorder={handleReorderTasks} onUseTemplate={handleUseTemplate} onCreateTemplate={handleCreateTemplate} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onUpdateProjectColor={handleUpdateProjectColor} onArchiveProject={handleArchiveProject} onRestoreProject={handleRestoreProject} />
+          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} activeTaskId={shownTimer.activeTaskId} hourFormat={shownData.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onReorder={handleReorderTasks} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onUpdateProjectColor={handleUpdateProjectColor} onArchiveProject={handleArchiveProject} onRestoreProject={handleRestoreProject} />
         </main>
       </div>
     </div>
@@ -548,9 +543,6 @@ export function App() {
               </li>
               <li>
                 <strong>Deep Ranking & Analytics:</strong> Export full CSV reports with detailed project timeline insights.
-              </li>
-              <li>
-                <strong>Unlimited Templates:</strong> Save repeatable daily task routines and templates without limits.
               </li>
             </ul>
           </div>
