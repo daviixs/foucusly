@@ -1,0 +1,266 @@
+name: CI/CD production
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node stays the runtime for the API, tsx and Vitest; Bun manages packages and scripts.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test API
+        run: bun run test
+
+      - name: Build workspaces
+        run: bun run build
+
+  publish:
+    name: Publish images
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api-image: ${{ steps.images.outputs.api }}
+      web-image: ${{ steps.images.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Define lowercase image names
+        id: images
+        shell: bash
+        run: |
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "api=ghcr.io/$owner/foucusly-api" >> "$GITHUB_OUTPUT"
+          echo "web=ghcr.io/$owner/foucusly-web" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.images.outputs.api }}:sha-${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+
+      - name: Build and publish web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ steps.images.outputs.web }}:sha-${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+            VITE_API_URL=${{ vars.PUBLIC_API_URL }}
+
+  deploy:
+    name: Deploy and verify production
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read last known-good release
+        id: previous
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous_sha="$(git rev-parse -q --verify refs/tags/production 2>/dev/null || true)"
+          echo "sha=$previous_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Validate production configuration
+        shell: bash
+        env:
+          COOLIFY_API_URL: ${{ secrets.COOLIFY_API_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_API_UUID: ${{ secrets.COOLIFY_API_UUID }}
+          COOLIFY_WEB_UUID: ${{ secrets.COOLIFY_WEB_UUID }}
+          API_URL: ${{ vars.PUBLIC_API_URL }}
+          WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
+        run: |
+          set -euo pipefail
+          for value in COOLIFY_API_URL COOLIFY_TOKEN COOLIFY_API_UUID COOLIFY_WEB_UUID API_URL WEB_URL; do
+            test -n "${!value}" || { echo "Missing production configuration: $value" >&2; exit 1; }
+          done
+
+      - name: Deploy current release
+        id: deploy
+        shell: bash
+        env:
+          COOLIFY_API_URL: ${{ secrets.COOLIFY_API_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_API_UUID: ${{ secrets.COOLIFY_API_UUID }}
+          COOLIFY_WEB_UUID: ${{ secrets.COOLIFY_WEB_UUID }}
+          API_IMAGE: ${{ needs.publish.outputs.api-image }}
+          WEB_IMAGE: ${{ needs.publish.outputs.web-image }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          api="${COOLIFY_API_URL%/}/api/v1"
+          tag="sha-$RELEASE_SHA"
+
+          update_image() {
+            curl --fail-with-body --silent --show-error \
+              --request PATCH "$api/applications/$1" \
+              --header "Authorization: Bearer $COOLIFY_TOKEN" \
+              --header "Content-Type: application/json" \
+              --data "{\"docker_registry_image_name\":\"$2\",\"docker_registry_image_tag\":\"$tag\"}"
+          }
+
+          deploy_resource() {
+            curl --fail-with-body --silent --show-error \
+              --request POST "$api/deploy" \
+              --header "Authorization: Bearer $COOLIFY_TOKEN" \
+              --header "Content-Type: application/json" \
+              --data "{\"uuid\":\"$1\",\"force\":false}"
+          }
+
+          update_image "$COOLIFY_API_UUID" "$API_IMAGE"
+          deploy_resource "$COOLIFY_API_UUID"
+          update_image "$COOLIFY_WEB_UUID" "$WEB_IMAGE"
+          deploy_resource "$COOLIFY_WEB_UUID"
+
+      - name: Verify current release
+        id: smoke
+        shell: bash
+        env:
+          API_URL: ${{ vars.PUBLIC_API_URL }}
+          WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          api_url="${API_URL%/}"
+          web_url="${WEB_URL%/}"
+
+          for attempt in $(seq 1 36); do
+            api_commit="$(curl --fail --silent --show-error --max-time 5 "$api_url/api/version" | jq -r '.commit // empty' 2>/dev/null || true)"
+            web_commit="$(curl --fail --silent --show-error --max-time 5 "$web_url/version.json" | jq -r '.commit // empty' 2>/dev/null || true)"
+
+            if curl --fail --silent --show-error --max-time 5 "$api_url/api/health" >/dev/null \
+              && curl --fail --silent --show-error --max-time 5 "$web_url/health" >/dev/null \
+              && [ "$api_commit" = "$RELEASE_SHA" ] \
+              && [ "$web_commit" = "$RELEASE_SHA" ]; then
+              exit 0
+            fi
+
+            echo "Waiting for release ($attempt/36): api=$api_commit web=$web_commit"
+            sleep 10
+          done
+
+          echo "Release did not become healthy with the expected version." >&2
+          exit 1
+
+      - name: Restore last known-good release
+        if: failure() && steps.previous.outputs.sha != ''
+        shell: bash
+        env:
+          COOLIFY_API_URL: ${{ secrets.COOLIFY_API_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_API_UUID: ${{ secrets.COOLIFY_API_UUID }}
+          COOLIFY_WEB_UUID: ${{ secrets.COOLIFY_WEB_UUID }}
+          API_IMAGE: ${{ needs.publish.outputs.api-image }}
+          WEB_IMAGE: ${{ needs.publish.outputs.web-image }}
+          PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
+        run: |
+          set -euo pipefail
+          api="${COOLIFY_API_URL%/}/api/v1"
+          tag="sha-$PREVIOUS_SHA"
+
+          restore() {
+            curl --fail-with-body --silent --show-error --request PATCH "$api/applications/$1" \
+              --header "Authorization: Bearer $COOLIFY_TOKEN" \
+              --header "Content-Type: application/json" \
+              --data "{\"docker_registry_image_name\":\"$2\",\"docker_registry_image_tag\":\"$tag\"}"
+            curl --fail-with-body --silent --show-error --request POST "$api/deploy" \
+              --header "Authorization: Bearer $COOLIFY_TOKEN" \
+              --header "Content-Type: application/json" \
+              --data "{\"uuid\":\"$1\",\"force\":false}"
+          }
+
+          restore "$COOLIFY_API_UUID" "$API_IMAGE"
+          restore "$COOLIFY_WEB_UUID" "$WEB_IMAGE"
+
+      - name: Verify restored release
+        if: failure() && steps.previous.outputs.sha != ''
+        shell: bash
+        env:
+          API_URL: ${{ vars.PUBLIC_API_URL }}
+          WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
+          PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
+        run: |
+          set -euo pipefail
+          api_url="${API_URL%/}"
+          web_url="${WEB_URL%/}"
+
+          for attempt in $(seq 1 36); do
+            api_commit="$(curl --fail --silent --show-error --max-time 5 "$api_url/api/version" | jq -r '.commit // empty' 2>/dev/null || true)"
+            web_commit="$(curl --fail --silent --show-error --max-time 5 "$web_url/version.json" | jq -r '.commit // empty' 2>/dev/null || true)"
+
+            if [ "$api_commit" = "$PREVIOUS_SHA" ] && [ "$web_commit" = "$PREVIOUS_SHA" ]; then
+              exit 0
+            fi
+
+            echo "Waiting for rollback ($attempt/36): api=$api_commit web=$web_commit"
+            sleep 10
+          done
+
+          echo "Rollback was requested but could not be verified." >&2
+          exit 1
+
+      - name: Report missing rollback baseline
+        if: failure() && steps.previous.outputs.sha == ''
+        run: echo "::error::No known-good release exists; manual recovery is required."
+
+      - name: Mark release as known good
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -f production "$GITHUB_SHA"
+          git push origin refs/tags/production --force

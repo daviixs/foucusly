@@ -50,13 +50,14 @@ export function buildServer(db: AppDatabase, options: ServerOptions = {}): Fasti
   });
 
   app.addHook("preHandler", async (request, reply) => {
-    if (request.url.startsWith("/api/health") || request.url.startsWith("/api/profiles")) return;
+    if (request.url.startsWith("/api/health") || request.url.startsWith("/api/version") || request.url.startsWith("/api/profiles")) return;
     const id = request.headers["x-profile-id"];
     if (typeof id !== "string" || !id) return reply.code(401).send({ error: "Choose a profile to continue" });
     if (!findProfile(db, id)) return reply.code(404).send({ error: "Profile not found" });
   });
 
   app.get("/api/health", async () => ({ ok: true }));
+  app.get("/api/version", async () => ({ commit: process.env.APP_VERSION ?? "unknown" }));
   if (corsOrigins.length) {
     void app.register(cors, {
       origin: corsOrigins,
