@@ -1,6 +1,7 @@
+import { DEFAULT_SETTINGS } from "@foucusly/contracts";
 import { describe, expect, it } from "vitest";
-import { createDatabase, createProfile, markReminderSent, reminderSeen, upsertPushSubscription, writeTimer, type AppDatabase } from "../../src/db.js";
-import { collectDueReminders, dispatchReminder } from "../../src/push/scheduler.js";
+import { createDatabase, createProfile, markReminderSent, reminderSeen, upsertPushSubscription, writeSettings, writeTimer, type AppDatabase } from "../../src/db.js";
+import { advanceReminderKey, collectAdvanceReminders, collectDueReminders, dispatchReminder } from "../../src/push/scheduler.js";
 import type { PushSender } from "../../src/push/sender.js";
 
 function memoryDb(): AppDatabase {
@@ -53,6 +54,45 @@ describe("collectDueReminders", () => {
     expect(collectDueReminders(db, now)).toHaveLength(0);
   });
 
+  it("notifies inside the lead window without consuming the completion reminder", () => {
+    const db = memoryDb();
+    const owner = newProfile(db, "early-owner");
+    const now = Date.now();
+    const endsAt = now + 4 * 60_000;
+    writeSettings(db, owner, { ...DEFAULT_SETTINGS, notificationReminderMinutes: 5 });
+    writeTimer(db, owner, endingAt(endsAt, "pomodoro", true));
+    const advance = collectAdvanceReminders(db, now);
+    expect(advance).toHaveLength(1);
+    expect(advance[0]).toMatchObject({ profileId: owner, endsAt, dedupeAt: advanceReminderKey(endsAt), mode: "pomodoro" });
+    expect(advance[0].payload.title).toBe("Focus ending soon");
+    expect(advance[0].payload.body).toContain("Deep work");
+    expect(collectDueReminders(db, now)).toHaveLength(0);
+    markReminderSent(db, owner, advanceReminderKey(endsAt));
+    expect(collectAdvanceReminders(db, now)).toHaveLength(0);
+    expect(collectDueReminders(db, endsAt + 1)).toHaveLength(1);
+    expect(reminderSeen(db, owner, endsAt)).toBe(false);
+  });
+
+  it("ignores advance reminders outside the window, after expiry, when disabled, or in the final seconds", () => {
+    const db = memoryDb();
+    const early = newProfile(db, "too-early");
+    const done = newProfile(db, "already-done");
+    const off = newProfile(db, "reminder-off");
+    const ending = newProfile(db, "almost-done");
+    const now = Date.now();
+    writeSettings(db, early, { ...DEFAULT_SETTINGS, notificationReminderMinutes: 5 });
+    writeSettings(db, done, { ...DEFAULT_SETTINGS, notificationReminderMinutes: 5 });
+    writeSettings(db, off, { ...DEFAULT_SETTINGS, notificationReminderMinutes: 0 });
+    writeSettings(db, ending, { ...DEFAULT_SETTINGS, notificationReminderMinutes: 5 });
+    writeTimer(db, early, endingAt(now + 10 * 60_000, "shortBreak", true));
+    writeTimer(db, done, endingAt(now - 1_000, "pomodoro", true));
+    writeTimer(db, off, endingAt(now + 60_000, "pomodoro", true));
+    writeTimer(db, ending, endingAt(now + 10_000, "pomodoro", true));
+    expect(collectAdvanceReminders(db, now)).toHaveLength(0);
+    expect(collectDueReminders(db, now)).toHaveLength(1);
+    expect(collectDueReminders(db, now)[0].profileId).toBe(done);
+  });
+
   it("ignores paused and malformed timer states", () => {
     const db = memoryDb();
     const owner = newProfile(db, "paused-owner");
@@ -74,6 +114,22 @@ describe("dispatchReminder", () => {
     const outcome = await dispatchReminder(db, { profileId: owner, endsAt, mode: "pomodoro", payload: { title: "Pomodoro finished", body: "Break time", mode: "pomodoro", url: "/app" } }, mockSender([{ ok: true }, { ok: true }]));
     expect(outcome).toMatchObject({ sent: 2 });
     expect(reminderSeen(db, owner, endsAt)).toBe(true);
+  });
+
+  it("records an advance reminder on its own key", async () => {
+    const db = memoryDb();
+    const owner = newProfile(db, "advance-key-owner");
+    upsertPushSubscription(db, owner, "https://push.example/a", JSON.stringify({ endpoint: "https://push.example/a" }));
+    const endsAt = Date.now() + 60_000;
+    await dispatchReminder(db, {
+      profileId: owner,
+      endsAt,
+      dedupeAt: advanceReminderKey(endsAt),
+      mode: "pomodoro",
+      payload: { title: "Focus ending soon", body: "1 min left.", mode: "pomodoro", url: "/app" }
+    }, mockSender([{ ok: true }]));
+    expect(reminderSeen(db, owner, advanceReminderKey(endsAt))).toBe(true);
+    expect(reminderSeen(db, owner, endsAt)).toBe(false);
   });
 
   it("drops subscriptions the push service reports as expired", async () => {

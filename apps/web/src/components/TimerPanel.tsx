@@ -1,4 +1,4 @@
-import { Pause, Play } from "@phosphor-icons/react";
+import { FastForward, Pause, Play } from "@phosphor-icons/react";
 import type { TimerMode } from "@foucusly/contracts";
 
 const modes: Array<{ key: TimerMode; label: string }> = [
@@ -13,11 +13,13 @@ interface TimerPanelProps {
   running: boolean;
   taskTitle?: string;
   cyclePomos: number;
+  longBreakInterval: number;
   onMode: (mode: TimerMode) => void;
   onToggle: () => void;
+  onSkip: () => void;
 }
 
-export function TimerPanel({ mode, seconds, running, taskTitle, cyclePomos, onMode, onToggle }: TimerPanelProps) {
+export function TimerPanel({ mode, seconds, running, taskTitle, cyclePomos, longBreakInterval, onMode, onToggle, onSkip }: TimerPanelProps) {
   const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
   const remainder = Math.max(0, seconds % 60).toString().padStart(2, "0");
   const greeting = mode === "pomodoro" ? "Time to focus!" : "Time for a break!";
@@ -37,8 +39,9 @@ export function TimerPanel({ mode, seconds, running, taskTitle, cyclePomos, onMo
         <button className="timer-primary" onClick={onToggle}>
           {running ? <><Pause size={18} weight="fill" /> PAUSE</> : <><Play size={18} weight="fill" /> START</>}
         </button>
+        <button className="timer-skip" type="button" aria-label="Skip current interval" onClick={onSkip}><FastForward size={22} weight="fill" /></button>
       </div>
     </section>
-      <div className="timer-footer"><span>#{(cyclePomos % 4) + 1}</span><span>{taskTitle ? `${greeting} · ${taskTitle}` : greeting}</span></div>
+      <div className="timer-footer"><span>#{(cyclePomos % Math.max(1, longBreakInterval)) + 1}</span><span>{taskTitle ? `${greeting} · ${taskTitle}` : greeting}</span></div>
   </>;
 }

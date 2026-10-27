@@ -12,6 +12,7 @@ interface TasksPanelProps {
   projects: Project[];
   activeTaskId: string | null;
   hourFormat: "12-hour" | "24-hour";
+  pomodoroMinutes: number;
   onCreate: (draft: TaskDraft) => Promise<void>;
   onUpdate: (id: string, patch: Partial<Task>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -54,7 +55,7 @@ export function TasksPanel(props: TasksPanelProps) {
   };
   const completed = tasks.filter((task) => task.completed).length;
   const activeIndex = Math.max(0, tasks.findIndex((task) => task.id === props.activeTaskId));
-  const finishMinutes = tasks.filter((task) => !task.completed).reduce((total, task) => total + Math.max(0, task.estimatePomos - task.completedPomos) * 25, 0);
+  const finishMinutes = tasks.filter((task) => !task.completed).reduce((total, task) => total + Math.max(0, task.estimatePomos - task.completedPomos) * Math.max(1, props.pomodoroMinutes), 0);
   const finishAt = new Date(Date.now() + finishMinutes * 60_000).toLocaleTimeString([], {
     hour: props.hourFormat === "12-hour" ? "numeric" : "2-digit",
     minute: "2-digit",

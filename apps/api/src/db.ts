@@ -151,6 +151,8 @@ export function deleteProfile(db: AppDatabase, profileId: string): void {
     db.prepare("DELETE FROM sessions WHERE profile_id = ?").run(profileId);
     db.prepare("DELETE FROM settings WHERE profile_id = ?").run(profileId);
     db.prepare("DELETE FROM timer WHERE profile_id = ?").run(profileId);
+    db.prepare("DELETE FROM push_subscriptions WHERE profile_id = ?").run(profileId);
+    db.prepare("DELETE FROM push_reminders WHERE profile_id = ?").run(profileId);
     db.prepare("DELETE FROM profiles WHERE id = ?").run(profileId);
   });
   del();

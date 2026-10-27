@@ -91,6 +91,7 @@ Before handing off a change, run `bun run typecheck`. Run `bun run build` for ch
 - Create exactly one session id when a cycle begins and send it once when the cycle completes. Do not turn a pause/resume into multiple completed sessions.
 - Preserve the session's task title and project id at start time. Tasks and projects can later be renamed, archived, or detached.
 - Changes to mode transitions, cycle counting, or auto-start must remain consistent with `durationForMode` and the persisted `TimerState` contract.
+- Skip abandons the current interval without posting a session or incrementing the focus cycle. A skipped Pomodoro moves to a short break; a skipped break moves to a Pomodoro. Auto-start still follows the settings and mints a new session id only when the next interval starts.
 
 ### Frontend conventions
 
@@ -102,6 +103,7 @@ Before handing off a change, run `bun run typecheck`. Run `bun run build` for ch
 ### Push notifications
 
 - Push support is optional. Code must tolerate missing VAPID configuration, unsupported browser APIs, expired subscriptions, and scheduler send failures.
+- `notificationReminderMinutes` is an advance reminder that many minutes before `endsAt`. Zero disables it. The completion push remains keyed by `endsAt` and must still send after an advance reminder.
 - The server scheduler is process-local. Do not imply distributed scheduling guarantees without redesigning the deployment model.
 
 ## Environment and deployment

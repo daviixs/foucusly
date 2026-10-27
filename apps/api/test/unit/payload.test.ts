@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPushPayload } from "../../src/push/payload.js";
+import { buildAdvancePushPayload, buildPushPayload } from "../../src/push/payload.js";
 
 describe("buildPushPayload", () => {
   it("uses pomodoro copy for focus sessions", () => {
@@ -20,5 +20,14 @@ describe("buildPushPayload", () => {
   it("mentions the completed task title", () => {
     const payload = buildPushPayload("pomodoro", "Write chapter");
     expect(payload.body).toContain("Write chapter is done.");
+  });
+
+  it("describes the time left before a timer ends", () => {
+    const payload = buildAdvancePushPayload("pomodoro", 5 * 60_000, "Write chapter");
+    expect(payload).toMatchObject({ title: "Focus ending soon", mode: "pomodoro", url: "/app" });
+    expect(payload.body).toBe("5 min left on Write chapter.");
+    expect(buildAdvancePushPayload("shortBreak", 20_000).body).toBe("Less than a minute left.");
+    expect(buildAdvancePushPayload("longBreak", 2 * 60_000).title).toBe("Long break ending soon");
+    expect(buildAdvancePushPayload("mystery", 60_000).mode).toBe("pomodoro");
   });
 });
