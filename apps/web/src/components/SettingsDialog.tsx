@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { BellRinging, GearSix, LockKey, X } from "@phosphor-icons/react";
-import type { Settings } from "@foucusly/contracts";
+import { useState, type CSSProperties } from "react";
+import { BellRinging, Check, GearSix, LockKey, X } from "@phosphor-icons/react";
+import type { Settings, ThemeColor } from "@foucusly/contracts";
 import { api } from "../api";
 import { ALARM_SOUNDS, playAlarm } from "../audio/alarm";
 
@@ -19,6 +19,14 @@ interface Props {
   onClose: () => void;
   onToast: (message: string) => void;
 }
+
+const THEME_COLORS: Array<{ id: ThemeColor; label: string; swatch: string }> = [
+  { id: "red", label: "Red", swatch: "#af4949" },
+  { id: "teal", label: "Teal", swatch: "#38858a" },
+  { id: "blue", label: "Blue", swatch: "#397097" },
+  { id: "green", label: "Green", swatch: "#598c57" },
+  { id: "purple", label: "Purple", swatch: "#7d53a2" }
+];
 
 function NumberSetting({ label, value, min = 0, max = 180, suffix, onChange }: { label: string; value: number; min?: number; max?: number; suffix?: string; onChange: (value: number) => void }) {
   return <label className="number-setting"><span>{label}</span><span className="number-control"><input aria-label={label} type="number" min={min} max={max} value={value} onChange={(event) => onChange(Math.min(max, Math.max(min, Number(event.target.value) || min)))} />{suffix && <small>{suffix}</small>}</span></label>;
@@ -97,7 +105,11 @@ export function SettingsDialog({ initial, onSave, onClose, onToast }: Props) {
           <div className="sound-settings"><SelectSetting label="Focus Sound" value={settings.focusSound} options={["None", "Rain", "Cafe", "Forest", "White noise"]} onChange={(value) => set("focusSound", value)} /><label className="range-setting"><span>Volume</span><input aria-label="Focus sound volume" type="range" min={0} max={100} value={settings.focusVolume} onChange={(event) => set("focusVolume", Number(event.target.value))} /><output>{settings.focusVolume}</output></label></div>
         </section>
         <section className="settings-group"><h3>Time Display</h3><div className="select-grid"><SelectSetting label="Hour Format" value={settings.hourFormat} options={["24-hour", "12-hour"]} onChange={(value) => set("hourFormat", value as Settings["hourFormat"])} /><SelectSetting label="Week starts on" value={settings.weekStartsOn === 1 ? "Monday" : "Sunday"} options={["Monday", "Sunday"]} onChange={(value) => set("weekStartsOn", value === "Monday" ? 1 : 0)} /></div></section>
-        <section className="settings-group"><h3>Notification</h3><div className="select-grid"><NumberSetting label="Reminder" value={settings.notificationReminderMinutes} min={0} max={120} suffix="min" onChange={(value) => set("notificationReminderMinutes", value)} /><button className="device-button" disabled={deviceBusy} onClick={() => { void enableDevice(); }}><BellRinging size={16} /> {deviceBusy ? "Enabling…" : "Add this device"}</button><button className="device-button" onClick={() => { void testPush(); }}><BellRinging size={16} /> Test reminder</button></div></section>
+        <section className="settings-group"><h3>Theme</h3><p className="settings-hint">Color</p>
+          <div className="theme-picker" role="radiogroup" aria-label="Theme color">{THEME_COLORS.map((theme) => <button key={theme.id} type="button" role="radio" aria-checked={settings.themeColor === theme.id} aria-label={`${theme.label} theme`} className={`theme-swatch${settings.themeColor === theme.id ? " active" : ""}`} style={{ "--swatch": theme.swatch } as CSSProperties} onClick={() => set("themeColor", theme.id)}>{settings.themeColor === theme.id ? <Check size={14} weight="bold" /> : null}</button>)}</div>
+          <ToggleSetting label="Dark mode when running" checked={settings.darkModeWhenRunning} onChange={(value) => set("darkModeWhenRunning", value)} />
+        </section>
+        <section className="settings-group"><h3>Notification</h3><p className="settings-hint">Notify this many minutes before the timer ends, and again when it finishes. 0 turns both browser alerts off. Subscribed devices are still notified when the timer finishes.</p><div className="select-grid"><NumberSetting label="Remind before end" value={settings.notificationReminderMinutes} min={0} max={120} suffix="min" onChange={(value) => { const wasOff = settings.notificationReminderMinutes <= 0; set("notificationReminderMinutes", value); if (wasOff && value > 0 && "Notification" in window && Notification.permission === "default") void Notification.requestPermission().then((permission) => { if (permission !== "granted") onToast("Allow notifications to get the early reminder in this browser."); }); }} /><button className="device-button" disabled={deviceBusy} onClick={() => { void enableDevice(); }}><BellRinging size={16} /> {deviceBusy ? "Enabling…" : "Add this device"}</button><button className="device-button" onClick={() => { void testPush(); }}><BellRinging size={16} /> Test reminder</button></div></section>
         <section className="settings-group"><h3>Integration</h3><div className="integration-row"><div><b>Webhook</b><small>Connect Foucusly with other apps</small></div><button className="locked-button" onClick={() => onToast("Webhooks are a Premium feature.")}>Add <LockKey size={13} /></button></div></section>
       </div>
       <footer className="dialog-footer"><button className="button-muted" onClick={onClose}>Cancel</button><button className="button-dark" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "OK"}</button></footer>

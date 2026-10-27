@@ -154,3 +154,15 @@ export function durationForMode(settings: Settings, mode: TimerMode): number {
   return Math.max(1, minutes) * 60;
 }
 
+/** Skip the advance reminder this close to endsAt; the completion alert covers that moment. */
+export const ADVANCE_REMINDER_MIN_REMAINING_MS = 15_000;
+
+export function advanceReminderCopy(mode: TimerMode | string, remainingMs: number, taskTitle?: string | null): { title: string; body: string } {
+  const stage: TimerMode = mode === "shortBreak" || mode === "longBreak" ? mode : "pomodoro";
+  const title = stage === "pomodoro" ? "Focus ending soon" : stage === "shortBreak" ? "Short break ending soon" : "Long break ending soon";
+  const remaining = Math.max(0, remainingMs);
+  const lead = remaining >= 60_000 ? `${Math.ceil(remaining / 60_000)} min left` : "Less than a minute left";
+  const body = stage === "pomodoro" && taskTitle ? `${lead} on ${taskTitle}.` : `${lead}.`;
+  return { title, body };
+}
+

@@ -51,12 +51,11 @@ Quando uma sessão de foco termina, o Foucusly registra um histórico idempotent
 
 - Ciclos de Pomodoro, pausa curta e pausa longa, com início automático opcional.
 - Projetos persistentes, cores, arquivamento/restauração e tarefas com estimativa de Pomodoros.
-- Modelos de tarefa para repetir fluxos frequentes.
 - Perfis locais para manter dados separados no mesmo dispositivo.
 - Timer persistente: recarregar a página não descarta o estado atual.
 - Relatórios diários, semanais, mensais e anuais, com detalhes de sessão e rankings por projeto ou tarefa.
 - Sons de alarme e ambiente, preferências visuais e modo escuro durante uma sessão.
-- Notificações Web Push quando um timer termina, em navegadores e ambientes compatíveis.
+- Notificações Web Push quando um timer termina e um lembrete opcional minutos antes do fim, em navegadores e ambientes compatíveis.
 - Interface responsiva, incluindo a rota simplificada `/app`.
 
 ## Arquitetura
