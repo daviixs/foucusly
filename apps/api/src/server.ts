@@ -21,7 +21,7 @@ const settingsInput = z.object({
   alarmSound: z.string().min(1).max(40), alarmVolume: z.number().int().min(0).max(100), alarmRepeat: z.number().int().min(1).max(5),
   focusSound: z.string().min(1).max(40), focusVolume: z.number().int().min(0).max(100),
   themeColor: z.enum(["red", "teal", "blue", "green", "purple"]), hourFormat: z.enum(["12-hour", "24-hour"]),
-  darkModeWhenRunning: z.boolean(), notificationReminderMinutes: z.number().int().min(0).max(120),
+  darkModeWhenRunning: z.boolean(), autoDarkAtNight: z.boolean(), notificationReminderMinutes: z.number().int().min(0).max(120),
   weekStartsOn: z.union([z.literal(0), z.literal(1)])
 });
 const timerInput = z.object({

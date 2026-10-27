@@ -48,6 +48,7 @@ export interface Settings {
   themeColor: ThemeColor;
   hourFormat: "12-hour" | "24-hour";
   darkModeWhenRunning: boolean;
+  autoDarkAtNight: boolean;
   notificationReminderMinutes: number;
   weekStartsOn: 0 | 1;
 }
@@ -141,6 +142,7 @@ export const DEFAULT_SETTINGS: Settings = {
   themeColor: "red",
   hourFormat: "24-hour",
   darkModeWhenRunning: false,
+  autoDarkAtNight: false,
   notificationReminderMinutes: 0,
   weekStartsOn: 1
 };
@@ -166,3 +168,11 @@ export function advanceReminderCopy(mode: TimerMode | string, remainingMs: numbe
   return { title, body };
 }
 
+export const NIGHT_STARTS_AT_HOUR = 18;
+export const NIGHT_ENDS_AT_HOUR = 6;
+
+/** Night is evaluated in the browser's local time zone. */
+export function isNightTime(date: Date): boolean {
+  const hour = date.getHours();
+  return hour >= NIGHT_STARTS_AT_HOUR || hour < NIGHT_ENDS_AT_HOUR;
+}
