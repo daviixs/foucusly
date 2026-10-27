@@ -1,4 +1,4 @@
-import type { TimerMode } from "@foucusly/contracts";
+import { advanceReminderCopy, type TimerMode } from "@foucusly/contracts";
 
 export interface PushPayload {
   title: string;
@@ -18,4 +18,9 @@ export function buildPushPayload(mode: string, taskTitle?: string | null): PushP
   const base = stageLabels[stage];
   const body = stage === "pomodoro" && taskTitle ? `${base.body} ${taskTitle} is done.` : base.body;
   return { ...base, body, url: "/app", mode: stage };
+}
+
+export function buildAdvancePushPayload(mode: string, remainingMs: number, taskTitle?: string | null): PushPayload {
+  const stage = mode in stageLabels ? (mode as TimerMode) : "pomodoro";
+  return { ...advanceReminderCopy(stage, remainingMs, taskTitle), url: "/app", mode: stage };
 }

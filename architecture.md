@@ -96,6 +96,8 @@ The timer is a coordinated browser/API state machine:
 
 Pausing stores the remaining seconds and clears `endsAt`; resuming retains the original session context. Thus a pause/resume does not create extra session records.
 
+Skip abandons the current interval. It does not post a session and does not increment the focus cycle, so a skipped Pomodoro is absent from reports and task counts. A skipped Pomodoro advances to a short break; a skipped break advances to a Pomodoro. Auto-start settings still decide whether that next interval runs immediately, using a new session id when it does.
+
 ## Reporting
 
 Report routes delegate period parsing and aggregation to `services/reporting.ts`. Inputs constrain the requested period (`day`, `week`, `month`, `year`) and anchor date. The reporting service returns:
@@ -112,6 +114,8 @@ The UI accesses those routes through the API client and presents them in `Report
 ## Push reminders
 
 The API starts a polling scheduler after Fastify begins listening. At the configured interval (15 seconds by default), it finds profile timers whose `endsAt` is due, skips ones already recorded in `push_reminders`, builds a mode-aware payload, and sends it to every stored subscription for that profile. Expired subscriptions are removed; successful or attempted reminder windows are recorded to prevent duplicate sends.
+
+When `notificationReminderMinutes` is greater than zero, the same scheduler also sends one advance reminder once the running timer is inside that window and more than 15 seconds remain. Advance reminders are stored under a distinct key, so they do not suppress the completion push that still fires when `endsAt` is due. Zero disables only the advance reminder. The open tab shows the same advance copy through the Notification API.
 
 This scheduler is intentionally in-process. One API process with one SQLite database is the supported topology. Multiple API processes sharing a file or scheduler ownership would require explicit coordination before it can make reliable delivery guarantees.
 
