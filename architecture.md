@@ -55,9 +55,8 @@ The API uses JSON below `/api`. `server.ts` owns the shared server configuration
 | --- | --- | --- |
 | Health | `GET /health` | Unscoped liveness response. |
 | Profiles | `GET/POST /profiles`, `DELETE /profiles/:id` | Local profile management. |
-| Bootstrap | `GET /bootstrap` | Returns the selected profile's tasks, projects, templates, settings, and timer in one read. |
-| Tasks | `POST /tasks`, `PATCH/DELETE /tasks/:id`, `POST /tasks/actions/:action` | Tasks belong to a profile and may reference an active project. |
-| Templates | `POST /templates`, `DELETE /templates/:id`, `POST /templates/:id/use` | Reusable task definitions; the current product limits a profile to three. |
+| Bootstrap | `GET /bootstrap` | Returns the selected profile's tasks, projects, settings, and timer in one read. |
+| Tasks | `POST /tasks`, `PATCH/DELETE /tasks/:id`, `POST /tasks/actions/:action` | Tasks belong to a profile and may reference an active project. Bulk actions are `clear-finished`, `clear-pomos`, and `clear-all` (`services/task-actions.ts`). |
 | Projects | `GET/POST /projects`, `PATCH/DELETE /projects/:id`, archived/restore routes | Deletion archives; it does not delete history. |
 | Timer/settings | `PUT /timer`, `PUT /settings` | Durable per-profile snapshots/settings. |
 | Sessions | `POST /sessions` | Idempotently records a completed cycle and applies focus-task side effects. |
@@ -76,13 +75,12 @@ All request payloads are parsed with Zod before a write occurs. The error handle
 | `timer` | One persisted timer state per profile, including active-session snapshot fields. |
 | `projects` | Profile-owned projects, optional color, and `archived_at` marker. |
 | `tasks` | Profile-owned task queue, estimates/progress/completion state, optional project link, and ordering. |
-| `templates` | Profile-owned reusable task forms. |
 | `sessions` | Completed focus or break intervals, with a UUID primary key for idempotency and denormalized task/project context. |
 | `push_subscriptions` | Browser push subscription JSON per profile and endpoint. |
 | `push_reminders` | `(profile_id, ends_at)` deduplication record for scheduled notifications. |
 | `app_config` | Process-level persisted settings, including VAPID material when configured. |
 
-Task, project, template, and session indexes include profile-related access patterns. Reporting filters completed `pomodoro` sessions by their end time; archived projects therefore remain reportable through the historical session record.
+Task, project, and session indexes include profile-related access patterns. Reporting filters completed `pomodoro` sessions by their end time; archived projects therefore remain reportable through the historical session record.
 
 ## Timer and session lifecycle
 

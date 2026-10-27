@@ -61,14 +61,6 @@ export function createDatabase(path = process.env.DATABASE_PATH ?? "data/foucusl
       created_at TEXT NOT NULL,
       project_id TEXT
     );
-    CREATE TABLE IF NOT EXISTS templates (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      title TEXT NOT NULL,
-      note TEXT NOT NULL DEFAULT '',
-      estimate_pomos INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       mode TEXT NOT NULL,
@@ -82,7 +74,7 @@ export function createDatabase(path = process.env.DATABASE_PATH ?? "data/foucusl
   `);
   migrateSingletonTable(db, "settings");
   migrateSingletonTable(db, "timer");
-  for (const table of ["projects", "tasks", "templates", "sessions", "settings", "timer"] as const) {
+  for (const table of ["projects", "tasks", "sessions", "settings", "timer"] as const) {
     ensureColumn(db, table, "profile_id", "TEXT");
   }
   ensureColumn(db, "tasks", "project_id", "TEXT");
@@ -109,7 +101,8 @@ export function createDatabase(path = process.env.DATABASE_PATH ?? "data/foucusl
   db.exec("CREATE INDEX IF NOT EXISTS tasks_project_idx ON tasks(project_id)");
   db.exec("CREATE INDEX IF NOT EXISTS tasks_profile_idx ON tasks(profile_id, sort_order, created_at)");
   db.exec("CREATE INDEX IF NOT EXISTS projects_profile_idx ON projects(profile_id, archived_at, name)");
-  db.exec("CREATE INDEX IF NOT EXISTS templates_profile_idx ON templates(profile_id, created_at)");
+  // Task templates were removed from the product; drop the table left behind by older databases.
+  db.exec("DROP INDEX IF EXISTS templates_profile_idx; DROP TABLE IF EXISTS templates");
   db.exec("CREATE INDEX IF NOT EXISTS sessions_profile_idx ON sessions(profile_id, mode, ended_at)");
 
   const settingsRow = db.prepare("SELECT value FROM settings WHERE id = 1").get() as { value: string } | undefined;
@@ -135,7 +128,7 @@ export function createProfile(db: AppDatabase, username: string): Profile {
     const existing = db.prepare("SELECT COUNT(*) AS count FROM profiles").get() as { count: number };
     db.prepare("INSERT INTO profiles (id, username, created_at) VALUES (?, ?, ?)").run(id, username, createdAt);
     if (existing.count === 0) {
-      for (const table of ["projects", "tasks", "templates", "sessions", "settings", "timer"] as const) {
+      for (const table of ["projects", "tasks", "sessions", "settings", "timer"] as const) {
         db.prepare(`UPDATE ${table} SET profile_id = ? WHERE profile_id IS NULL`).run(id);
       }
     } else {
@@ -155,7 +148,6 @@ export function deleteProfile(db: AppDatabase, profileId: string): void {
   const del = db.transaction(() => {
     db.prepare("DELETE FROM tasks WHERE profile_id = ?").run(profileId);
     db.prepare("DELETE FROM projects WHERE profile_id = ?").run(profileId);
-    db.prepare("DELETE FROM templates WHERE profile_id = ?").run(profileId);
     db.prepare("DELETE FROM sessions WHERE profile_id = ?").run(profileId);
     db.prepare("DELETE FROM settings WHERE profile_id = ?").run(profileId);
     db.prepare("DELETE FROM timer WHERE profile_id = ?").run(profileId);
@@ -166,7 +158,9 @@ export function deleteProfile(db: AppDatabase, profileId: string): void {
 
 export function readSettings(db: AppDatabase, profileId: string): Settings {
   const row = db.prepare("SELECT value FROM settings WHERE profile_id = ?").get(profileId) as { value: string };
-  return { ...DEFAULT_SETTINGS, ...JSON.parse(row.value) } as Settings;
+  // tasksVisible belonged to the removed "Hide tasks" option; drop it so stored settings cannot hide tasks.
+  const { tasksVisible: _removed, ...stored } = JSON.parse(row.value) as Partial<Settings> & { tasksVisible?: boolean };
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 export function writeSettings(db: AppDatabase, profileId: string, settings: Settings) {
@@ -250,13 +244,10 @@ export function readBootstrap(db: AppDatabase, profileId: string): BootstrapData
     .all(profileId) as Array<Omit<BootstrapData["tasks"][number], "completed"> & { completed: number }>;
   const projects = db.prepare("SELECT id, name, created_at AS createdAt, archived_at AS archivedAt, color FROM projects WHERE profile_id = ? AND archived_at IS NULL ORDER BY name COLLATE NOCASE")
     .all(profileId) as Project[];
-  const templates = db.prepare("SELECT id, name, title, note, estimate_pomos AS estimatePomos, created_at AS createdAt FROM templates WHERE profile_id = ? ORDER BY created_at")
-    .all(profileId) as BootstrapData["templates"];
   return {
     profile: findProfile(db, profileId)!,
     tasks: tasks.map((task) => ({ ...task, completed: Boolean(task.completed) })),
     projects,
-    templates,
     settings: readSettings(db, profileId),
     timer: readTimer(db, profileId)
   };
