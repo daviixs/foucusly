@@ -68,7 +68,7 @@ export function Header({
 
   return (
     <header className="topbar">
-      <a className="brand" href="/" aria-label="Foucusly home">
+      <a className="brand" href={import.meta.env.BASE_URL} aria-label="Foucusly home">
         <span className="brand-mark">
           <CheckCircle size={21} weight="fill" />
         </span>

@@ -15,7 +15,7 @@ self.addEventListener("push", (event) => {
   const title = typeof payload.title === "string" && payload.title ? payload.title : "Foucusly";
   const options = {
     body: typeof payload.body === "string" ? payload.body : "",
-    badge: "favicon.ico",
+    badge: new URL("favicon.ico", self.registration.scope).href,
     data: { url: typeof payload.url === "string" ? payload.url : "/app" },
     vibrate: [120, 60, 120]
   };
@@ -24,7 +24,9 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = (event.notification.data && typeof event.notification.data.url === "string") ? event.notification.data.url : "/app";
+  const raw = (event.notification.data && typeof event.notification.data.url === "string") ? event.notification.data.url : "/app";
+  // Resolve app-relative paths against the SW scope so a non-root base (e.g. GitHub Pages /foucusly/) works.
+  const target = /^https?:/i.test(raw) ? raw : new URL(raw.replace(/^\/+/, ""), self.registration.scope).href;
   event.waitUntil((async () => {
     const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of clientList) {
