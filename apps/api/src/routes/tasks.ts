@@ -5,6 +5,7 @@ import { TASK_BULK_ACTIONS } from "@foucusly/contracts";
 import type { AppDatabase } from "../db.js";
 import { readBootstrap } from "../db.js";
 import { runTaskBulkAction } from "../services/task-actions.js";
+import { lookupProjectName, scheduleProfileWebhooks } from "../services/webhooks.js";
 
 interface TaskRoutesOptions { db: AppDatabase; }
 
@@ -49,6 +50,7 @@ export const taskRoutes: FastifyPluginAsync<TaskRoutesOptions> = async (app, { d
     const input = taskPatch.parse(request.body);
     const current = db.prepare("SELECT * FROM tasks WHERE id = ? AND profile_id=?").get(request.params.id, owner) as Record<string, unknown> | undefined;
     if (!current) return reply.code(404).send({ error: "Task not found" });
+    const wasCompleted = Boolean(current.completed);
     const projectId = input.projectId === undefined ? current.project_id as string | null : input.projectId;
     if (projectId && !taskBelongsToOwner(db, projectId, owner)) {
       return reply.code(400).send({ error: "Project not found or archived" });
@@ -64,6 +66,19 @@ export const taskRoutes: FastifyPluginAsync<TaskRoutesOptions> = async (app, { d
     };
     db.prepare("UPDATE tasks SET title=?, note=?, estimate_pomos=?, completed_pomos=?, completed=?, sort_order=?, project_id=? WHERE id=? AND profile_id=?")
       .run(merged.title, merged.note, merged.estimatePomos, merged.completedPomos, Number(merged.completed), merged.sortOrder, merged.projectId, request.params.id, owner);
+    if (!wasCompleted && merged.completed) {
+      scheduleProfileWebhooks(db, owner, [{
+        event: "task.completed",
+        data: {
+          task_id: request.params.id,
+          task_title: merged.title,
+          project_id: merged.projectId,
+          project_name: lookupProjectName(db, owner, merged.projectId),
+          estimated_pomos: merged.estimatePomos,
+          completed_pomos: merged.completedPomos
+        }
+      }]);
+    }
     return readBootstrap(db, owner).tasks.find((task) => task.id === request.params.id);
   });
 

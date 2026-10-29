@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
-import { DEFAULT_SETTINGS, durationForMode, type Settings, type TimerMode } from "@foucusly/contracts";
+import { durationForMode, normalizeSettings, WEBHOOK_EVENTS, type Settings } from "@foucusly/contracts";
 import { findProfile, type AppDatabase, readBootstrap, readSettings, readTimer, writeSettings, writeTimer } from "./db.js";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
@@ -10,6 +10,8 @@ import { reportRoutes } from "./routes/reports/index.js";
 import { taskRoutes } from "./routes/tasks.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { pushRoutes } from "./routes/push.js";
+import { webhookRoutes } from "./routes/webhooks.js";
+import { validateWebhookUrl } from "./services/webhooks.js";
 import type { PushSender } from "./push/sender.js";
 
 const settingsInput = z.object({
@@ -22,7 +24,13 @@ const settingsInput = z.object({
   focusSound: z.string().min(1).max(40), focusVolume: z.number().int().min(0).max(100),
   themeColor: z.enum(["red", "teal", "blue", "green", "purple"]), hourFormat: z.enum(["12-hour", "24-hour"]),
   darkModeWhenRunning: z.boolean(), autoDarkAtNight: z.boolean(), notificationReminderMinutes: z.number().int().min(0).max(120),
-  weekStartsOn: z.union([z.literal(0), z.literal(1)])
+  weekStartsOn: z.union([z.literal(0), z.literal(1)]),
+  webhookUrl: z.string().trim().max(2000).optional(),
+  webhookSecret: z.string().trim().max(256).optional(),
+  webhookToken: z.string().trim().max(512).optional(),
+  webhookEnabled: z.boolean().optional(),
+  webhookEvents: z.array(z.enum(WEBHOOK_EVENTS)).max(8).optional(),
+  webhookLastError: z.string().max(500).optional()
 });
 const timerInput = z.object({
   mode: z.enum(["pomodoro", "shortBreak", "longBreak"]),
@@ -70,14 +78,30 @@ export function buildServer(db: AppDatabase, options: ServerOptions = {}): Fasti
   void app.register(reportRoutes, { db });
   void app.register(taskRoutes, { db });
   void app.register(sessionRoutes, { db });
+  void app.register(webhookRoutes, { db });
   void app.register(pushRoutes, { db, sender: options.pushSender ?? { async send() { return { ok: false, expired: false, reason: "Push sender is not configured" }; } } });
 
-  app.put("/api/settings", { config: { rateLimit: strictRateLimit } }, async (request) => {
+  app.put("/api/settings", { config: { rateLimit: strictRateLimit } }, async (request, reply) => {
     const owner = request.headers["x-profile-id"] as string;
     const input = settingsInput.parse(request.body);
-    writeSettings(db, owner, input as Settings);
+    const current = readSettings(db, owner);
+    const next: Settings = normalizeSettings({
+      ...current,
+      ...input,
+      webhookUrl: input.webhookUrl ?? current.webhookUrl,
+      webhookSecret: input.webhookSecret ?? current.webhookSecret,
+      webhookToken: input.webhookToken ?? current.webhookToken,
+      webhookEnabled: input.webhookEnabled ?? current.webhookEnabled,
+      webhookEvents: input.webhookEvents === undefined ? current.webhookEvents : input.webhookEvents,
+      webhookLastError: input.webhookLastError ?? current.webhookLastError
+    });
+    if (next.webhookUrl) {
+      const check = await validateWebhookUrl(next.webhookUrl);
+      if (!check.ok) return reply.code(400).send({ error: check.reason });
+    }
+    writeSettings(db, owner, next);
     const timer = readTimer(db, owner);
-    if (!timer.running) writeTimer(db, owner, { ...timer, remainingSeconds: durationForMode(input as Settings, timer.mode) });
+    if (!timer.running) writeTimer(db, owner, { ...timer, remainingSeconds: durationForMode(next, timer.mode) });
     return readSettings(db, owner);
   });
 
