@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
-import { BellRinging, Check, GearSix, LockKey, X } from "@phosphor-icons/react";
-import type { Settings, ThemeColor } from "@foucusly/contracts";
+import { BellRinging, Check, GearSix, X } from "@phosphor-icons/react";
+import { DEFAULT_SETTINGS, isAllowedWebhookUrl, type Settings, type ThemeColor, type WebhookEvent } from "@foucusly/contracts";
 import { api } from "../api";
 import { ALARM_SOUNDS, playAlarm } from "../audio/alarm";
 
@@ -19,6 +19,11 @@ interface Props {
   onClose: () => void;
   onToast: (message: string) => void;
 }
+
+const WEBHOOK_EVENT_OPTIONS: Array<{ id: WebhookEvent; label: string }> = [
+  { id: "session.finished", label: "Session finished" },
+  { id: "task.completed", label: "Task completed" }
+];
 
 const THEME_COLORS: Array<{ id: ThemeColor; label: string; swatch: string }> = [
   { id: "red", label: "Red", swatch: "#af4949" },
@@ -41,11 +46,47 @@ function SelectSetting({ label, value, options, onChange }: { label: string; val
 }
 
 export function SettingsDialog({ initial, onSave, onClose, onToast }: Props) {
-  const [settings, setSettings] = useState(initial);
+  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, ...initial, webhookEvents: [...(initial.webhookEvents ?? [])] });
   const [busy, setBusy] = useState(false);
   const [deviceBusy, setDeviceBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setSettings((current) => ({ ...current, [key]: value }));
-  const save = async () => { setBusy(true); try { await onSave(settings); onClose(); } finally { setBusy(false); } };
+  const save = async () => {
+    setBusy(true);
+    try {
+      await onSave(settings);
+      onClose();
+    } catch (reason) {
+      onToast((reason as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggleWebhookEvent = (event: WebhookEvent, checked: boolean) => {
+    setSettings((current) => {
+      const events = new Set(current.webhookEvents);
+      if (checked) events.add(event);
+      else events.delete(event);
+      return { ...current, webhookEvents: [...events] };
+    });
+  };
+  const clearWebhook = () => {
+    setSettings((current) => ({ ...current, webhookUrl: "", webhookSecret: "", webhookToken: "", webhookEnabled: false, webhookEvents: [], webhookLastError: "" }));
+  };
+  const testWebhook = async () => {
+    setTestBusy(true);
+    try {
+      const result = await api.testWebhook({ webhookUrl: settings.webhookUrl, webhookSecret: settings.webhookSecret, webhookToken: settings.webhookToken });
+      setSettings((current) => ({ ...current, webhookLastError: result.ok ? "" : result.error ?? "Webhook delivery failed" }));
+      onToast(result.ok ? `Webhook ping delivered (${result.status ?? "ok"}). Use OK to save these settings.` : `Webhook ping failed: ${result.error ?? "delivery failed"}`);
+    } catch (reason) {
+      const message = (reason as Error).message;
+      setSettings((current) => ({ ...current, webhookLastError: message }));
+      onToast(message);
+    } finally {
+      setTestBusy(false);
+    }
+  };
 
   const enableDevice = async () => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
@@ -111,9 +152,43 @@ export function SettingsDialog({ initial, onSave, onClose, onToast }: Props) {
           <ToggleSetting label="Dark mode at night (18:00–06:00)" checked={settings.autoDarkAtNight} onChange={(value) => set("autoDarkAtNight", value)} />
         </section>
         <section className="settings-group"><h3>Notification</h3><p className="settings-hint">Notify this many minutes before the timer ends, and again when it finishes. 0 turns both browser alerts off. Subscribed devices are still notified when the timer finishes.</p><div className="select-grid"><NumberSetting label="Remind before end" value={settings.notificationReminderMinutes} min={0} max={120} suffix="min" onChange={(value) => { const wasOff = settings.notificationReminderMinutes <= 0; set("notificationReminderMinutes", value); if (wasOff && value > 0 && "Notification" in window && Notification.permission === "default") void Notification.requestPermission().then((permission) => { if (permission !== "granted") onToast("Allow notifications to get the early reminder in this browser."); }); }} /><button className="device-button" disabled={deviceBusy} onClick={() => { void enableDevice(); }}><BellRinging size={16} /> {deviceBusy ? "Enabling…" : "Add this device"}</button><button className="device-button" onClick={() => { void testPush(); }}><BellRinging size={16} /> Test reminder</button></div></section>
-        <section className="settings-group"><h3>Integration</h3><div className="integration-row"><div><b>Webhook</b><small>Connect Foucusly with other apps</small></div><button className="locked-button" onClick={() => onToast("Webhooks are a Premium feature.")}>Add <LockKey size={13} /></button></div></section>
+        <section className="settings-group">
+          <h3>Integration</h3>
+          <p className="settings-hint">POST JSON to your own URL when a session finishes or a task is checked off. HTTPS is required; http://localhost and http://127.0.0.1 are allowed for local testing. OK saves. Test sends a ping to the URL in this form.</p>
+          <div className="webhook-form">
+            <label className="webhook-field">
+              <span>Webhook URL</span>
+              <input type="url" inputMode="url" spellCheck={false} autoComplete="off" placeholder="https://hooks.zapier.com/..." value={settings.webhookUrl} onChange={(event) => set("webhookUrl", event.target.value)} />
+            </label>
+            <ToggleSetting label="Enabled" checked={settings.webhookEnabled} onChange={(value) => set("webhookEnabled", value)} />
+            <fieldset className="webhook-events">
+              <legend>Events</legend>
+              {WEBHOOK_EVENT_OPTIONS.map((option) => (
+                <label key={option.id} className="webhook-check">
+                  <input type="checkbox" checked={settings.webhookEvents.includes(option.id)} onChange={(event) => toggleWebhookEvent(option.id, event.target.checked)} />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </fieldset>
+            <label className="webhook-field">
+              <span>Secret (optional)</span>
+              <input type="password" autoComplete="new-password" spellCheck={false} value={settings.webhookSecret} onChange={(event) => set("webhookSecret", event.target.value)} />
+            </label>
+            <label className="webhook-field">
+              <span>Bearer token (optional)</span>
+              <input type="password" autoComplete="off" spellCheck={false} value={settings.webhookToken} onChange={(event) => set("webhookToken", event.target.value)} />
+            </label>
+            {settings.webhookUrl.trim() && !isAllowedWebhookUrl(settings.webhookUrl) ? <p className="webhook-error" role="alert">Use an https:// URL (http:// only for localhost / 127.0.0.1).</p> : null}
+            <p className="settings-hint">When a secret is set, each request includes X-Foucusly-Signature: sha256= plus the HMAC-SHA256 of the raw JSON body.</p>
+            {settings.webhookLastError ? <p className="webhook-error" role="status">{settings.webhookLastError}</p> : null}
+            <div className="webhook-actions">
+              <button type="button" className="device-button" disabled={testBusy} onClick={() => { void testWebhook(); }}>{testBusy ? "Testing…" : "Test"}</button>
+              <button type="button" className="device-button" onClick={clearWebhook}>Clear</button>
+            </div>
+          </div>
+        </section>
       </div>
-      <footer className="dialog-footer"><button className="button-muted" onClick={onClose}>Cancel</button><button className="button-dark" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "OK"}</button></footer>
+      <footer className="dialog-footer"><button className="button-muted" onClick={onClose}>Cancel</button><button className="button-dark" onClick={() => void save()} disabled={busy || testBusy}>{busy ? "Saving…" : "OK"}</button></footer>
     </section>
   </div>;
 }
