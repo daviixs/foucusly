@@ -58,8 +58,9 @@ The API uses JSON below `/api`. `server.ts` owns the shared server configuration
 | Bootstrap | `GET /bootstrap` | Returns the selected profile's tasks, projects, settings, and timer in one read. |
 | Tasks | `POST /tasks`, `PATCH/DELETE /tasks/:id`, `POST /tasks/actions/:action` | Tasks belong to a profile and may reference an active project. Bulk actions are `clear-finished`, `clear-pomos`, and `clear-all` (`services/task-actions.ts`). |
 | Projects | `GET/POST /projects`, `PATCH/DELETE /projects/:id`, archived/restore routes | Deletion archives; it does not delete history. |
-| Timer/settings | `PUT /timer`, `PUT /settings` | Durable per-profile snapshots/settings. |
-| Sessions | `POST /sessions` | Idempotently records a completed cycle and applies focus-task side effects. |
+| Timer/settings | `PUT /timer`, `PUT /settings` | Durable per-profile snapshots/settings, including outbound webhook fields. |
+| Sessions | `POST /sessions` | Idempotently records a completed cycle and applies focus-task side effects. A new insert can emit `session.finished`. |
+| Webhooks | `POST /webhooks/test` | Sends a `ping` payload and returns the delivery result. |
 | Reports | `GET /reports`, `/reports/detail`, `/reports/ranking` | Focus-only aggregate, detail, and ranking queries. |
 
 All request payloads are parsed with Zod before a write occurs. The error handler turns validation failures into `400` responses and avoids exposing internal error details for `5xx` failures. Fastify has a global request rate limit, with tighter limits on write-heavy routes.
@@ -71,7 +72,7 @@ All request payloads are parsed with Zod before a write occurs. The error handle
 | Table | Purpose |
 | --- | --- |
 | `profiles` | Local profile id, case-insensitive unique username, creation time. |
-| `settings` | One JSON settings value per profile. |
+| `settings` | One JSON settings value per profile, including optional outbound webhook configuration. |
 | `timer` | One persisted timer state per profile, including active-session snapshot fields. |
 | `projects` | Profile-owned projects, optional color, and `archived_at` marker. |
 | `tasks` | Profile-owned task queue, estimates/progress/completion state, optional project link, and ordering. |
@@ -90,7 +91,7 @@ The timer is a coordinated browser/API state machine:
 2. Starting a stopped timer assigns a UUID session id (when needed), captures the task title and project id, sets `endsAt`, and persists the updated state through `PUT /api/timer`.
 3. The browser checks `endsAt` on a short interval. This avoids trusting elapsed ticks and allows the remaining time to be recalculated after a delayed tab.
 4. When the timer finishes, the client posts one completed record to `POST /api/sessions` using its session id.
-5. The API inserts the session with `INSERT OR IGNORE`. A newly inserted Pomodoro increments its associated task; configured auto-completion and queue reordering occur in the same completion path.
+5. The API inserts the session with `INSERT OR IGNORE`. A newly inserted Pomodoro increments its associated task; configured auto-completion and queue reordering occur in the same completion path. A new insert also schedules `session.finished`, and auto-check can schedule `task.completed`, without waiting for delivery.
 6. The client selects the next mode: a short break normally follows a Pomodoro, a long break follows every configured interval, and Pomodoro follows any break. Auto-start settings decide whether the next state runs immediately.
 7. The next timer snapshot is persisted and the bootstrap data is refreshed.
 
@@ -110,6 +111,16 @@ Report routes delegate period parsing and aggregation to `services/reporting.ts`
 - ranked projects or tasks.
 
 The UI accesses those routes through the API client and presents them in `ReportDialog` rather than calculating report data from the current task list. Completed sessions are the accounting source of truth.
+
+## Outbound webhooks
+
+Webhook settings live in the profile settings JSON: `webhookUrl`, `webhookSecret`, `webhookEnabled`, `webhookEvents`, and `webhookLastError`. Older rows omit those keys; `normalizeSettings` fills the safe defaults (disabled, empty URL, no events) when the row is read. There is no separate webhook table.
+
+`services/webhooks.ts` emits `session.finished` after a new `POST /api/sessions` insert and `task.completed` when a task transitions to completed, either from that auto-check or from `PATCH /api/tasks/:id`. A duplicate session id does not emit. Manual session create, edit, and delete do not emit `session.finished`.
+
+Delivery is a JSON POST (`{ event, timestamp, profileId, data }`) with a 4 second timeout and one retry on timeout or HTTP 5xx. Redirects are not followed. HTTPS is required except for loopback (`localhost`, `::1`, and `127.0.0.0/8`). Other private, link-local, and non-public targets are rejected, including a hostname that resolves to one. The optional secret adds `X-Foucusly-Signature: sha256=<hmac-sha256 of the raw body>`; the optional token adds `Authorization: Bearer <token>`. A failed delivery is logged and stored in `webhookLastError`; it does not roll back the session or task write.
+
+`POST /api/webhooks/test` sends a `ping` and returns `{ ok, status, error, attempts }` so Settings can show the result. Ping does not require the enabled flag. Live events do, and the event must be listed in `webhookEvents`.
 
 ## Push reminders
 
