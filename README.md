@@ -135,6 +135,40 @@ DATABASE_PATH=/caminho/para/foucusly.sqlite bun run dev:api
 
 As variáveis de ambiente mais relevantes são `PORT`, `HOST`, `DATABASE_PATH`, `CORS_ORIGINS`, `TRUST_PROXY` e `PUSH_POLL_INTERVAL_MS`. As chaves VAPID para Web Push podem ser configuradas ou persistidas localmente pela API.
 
+## GitHub Pages (front-end estático)
+
+O front-end (`apps/web`) pode ser publicado no GitHub Pages pelo workflow `.github/workflows/pages.yml`, que roda a cada push em `main` e também manualmente (`workflow_dispatch`). A API continua hospedada separadamente.
+
+### Variáveis de ambiente
+
+| Variável | Onde | Descrição |
+| --- | --- | --- |
+| `VITE_API_URL` | build do web | URL pública da API, sem `/api` no final (ex.: `https://api.seudominio.com`). Vazia = mesma origem (comportamento atual; em dev o proxy do Vite encaminha `/api` para `localhost:3001`). |
+| `VITE_BASE` | build do web | Caminho base do site. Padrão `/`. No Pages de projeto use `/foucusly/`. |
+| `CORS_ORIGINS` | API | Origens permitidas, separadas por vírgula (ex.: `https://daviixs.github.io`). Vazia = sem CORS (apenas mesma origem). Permite os headers `Content-Type`, `Authorization`, `x-profile-id` e os métodos `GET POST PUT PATCH DELETE OPTIONS`. |
+
+### Habilitando o Pages
+
+1. Em **Settings → Pages**, defina **Source: GitHub Actions**.
+2. Em **Settings → Secrets and variables → Actions → Variables**, crie as *repository variables*:
+   - `VITE_API_URL` = URL pública da API (ex.: `https://api.seudominio.com`)
+   - `VITE_BASE` = `/foucusly/`
+3. Na API, defina `CORS_ORIGINS=https://daviixs.github.io` (origem sem caminho).
+4. Faça push em `main` ou rode o workflow **GitHub Pages** manualmente.
+
+Exemplo: com `VITE_BASE=/foucusly/` o site fica em https://daviixs.github.io/foucusly/. O build gera `dist/404.html` (cópia do `index.html`) para que rotas como `/foucusly/app` funcionem no Pages, e o service worker é registrado em `${base}sw.js`.
+
+Teste local: `VITE_BASE=/foucusly/ VITE_API_URL=http://localhost:3001 bun run --filter @foucusly/web build`.
+
+### Domínio próprio (focusly.js.org)
+
+Ainda **não** há arquivo `CNAME` no repositório. Quando o pedido no js.org for aprovado:
+
+1. Crie `apps/web/public/CNAME` contendo apenas `focusly.js.org` (o Vite copia para `dist/`).
+2. Altere a variável `VITE_BASE` para `/` (o site passa a ser servido na raiz do domínio).
+3. Atualize `CORS_ORIGINS` na API para incluir `https://focusly.js.org`.
+4. Em **Settings → Pages**, confirme o domínio customizado e ative **Enforce HTTPS**.
+
 ## Webhooks
 
 Webhooks de saída fazem parte do app, sem paywall. Em **Settings → Integration**, cole uma URL, ative o envio, escolha os eventos e salve com **OK**. Uma URL vazia deixa o recurso desligado.

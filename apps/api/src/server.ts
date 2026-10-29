@@ -40,13 +40,16 @@ const timerInput = z.object({
   currentSessionTaskId: z.string().nullable().optional(), currentSessionTaskTitle: z.string().nullable().optional(), currentSessionProjectId: z.string().nullable().optional()
 });
 
-const corsOrigins = (process.env.CORS_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean);
+export function parseCorsOrigins(value: string | undefined): string[] {
+  return (value ?? "").split(",").map((origin) => origin.trim().replace(/\/+$/, "")).filter(Boolean);
+}
 const trustProxy: boolean | string = process.env.TRUST_PROXY === "true" ? true : process.env.TRUST_PROXY?.trim() || false;
 const strictRateLimit = { max: 60, timeWindow: "1 minute" };
 
-export interface ServerOptions { pushSender?: PushSender; }
+export interface ServerOptions { pushSender?: PushSender; /** Overrides CORS_ORIGINS; empty = same-origin only (no CORS headers). */ corsOrigins?: string[]; }
 
 export function buildServer(db: AppDatabase, options: ServerOptions = {}): FastifyInstance {
+  const corsOrigins = options.corsOrigins ?? parseCorsOrigins(process.env.CORS_ORIGINS);
   const app = Fastify({ logger: process.env.NODE_ENV !== "test", bodyLimit: 1_000_000, trustProxy });
   app.setErrorHandler((error, _request, reply) => {
     app.log.error(error);
@@ -67,8 +70,8 @@ export function buildServer(db: AppDatabase, options: ServerOptions = {}): Fasti
   if (corsOrigins.length) {
     void app.register(cors, {
       origin: corsOrigins,
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-      allowedHeaders: ["content-type", "x-profile-id"]
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "x-profile-id"]
     });
   }
   void app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute" });

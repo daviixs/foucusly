@@ -65,7 +65,7 @@ function notifyBeforeEnd(current: TimerState, reminderMinutes: number, remindedE
 }
 
 export function App() {
-  const isSimplePage = window.location.pathname === "/app";
+  const isSimplePage = window.location.pathname.replace(/\/+$/, "") === `${import.meta.env.BASE_URL}app`;
   const [data, setData] = useState<BootstrapData | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -381,7 +381,7 @@ export function App() {
         </main>
       </div>
     </div>
-    {isSimplePage && <div className="app-bottom-link"><a href="/">FULL PAGE</a></div>}
+    {isSimplePage && <div className="app-bottom-link"><a href={import.meta.env.BASE_URL}>FULL PAGE</a></div>}
     {dialog === "settings" && data && <SettingsDialog initial={data.settings} onSave={saveSettings} onClose={() => setDialog(null)} onToast={notify} />}
     {dialog === "report" && <ReportDialog onClose={() => setDialog(null)} />}
     {(!profile || profileDialogOpen) && (

@@ -1,10 +1,16 @@
 import type { BootstrapData, DetailedSession, Profile, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskBulkAction, TimerState, WebhookTestResult } from "@foucusly/contracts";
 
 let activeProfileId = "";
-const apiOrigin = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
+/** Base URL of the API. Empty string = same origin (dev uses the Vite proxy for /api). */
+export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/+$/, "");
+
+/** Builds an absolute or same-origin URL for an API path such as "/tasks". */
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}/api${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 async function request<T>(path: string, init?: RequestInit, profileScoped = true): Promise<T> {
-  const response = await fetch(`${apiOrigin}/api${path}`, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     // Fastify rejects an empty body declared as JSON, so bodiless POST/DELETE calls must omit the header.
     headers: { ...(init?.body !== undefined ? { "content-type": "application/json" } : {}), ...(profileScoped && activeProfileId ? { "x-profile-id": activeProfileId } : {}), ...init?.headers }
