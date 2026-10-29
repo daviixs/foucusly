@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createDatabase, createProfile, markReminderSent, reminderSeen, upsertPushSubscription, writeTimer, type AppDatabase } from "../../src/db.js";
+import {
+  createDatabase,
+  createProfile,
+  markReminderSent,
+  reminderSeen,
+  upsertPushSubscription,
+  writeTimer,
+  type AppDatabase,
+} from "../../src/db.js";
 import { collectDueReminders, dispatchReminder } from "../../src/push/scheduler.js";
 import type { PushSender } from "../../src/push/sender.js";
 
@@ -13,10 +21,17 @@ function newProfile(db: AppDatabase, name: string): string {
 
 function endingAt(endsAt: number, mode: "pomodoro" | "shortBreak" | "longBreak", running: boolean) {
   return {
-    mode, remainingSeconds: 10, running, endsAt, cyclePomos: 0,
-    activeTaskId: null, currentSessionId: "00000000-0000-4000-8000-000000000001",
+    mode,
+    remainingSeconds: 10,
+    running,
+    endsAt,
+    cyclePomos: 0,
+    activeTaskId: null,
+    currentSessionId: "00000000-0000-4000-8000-000000000001",
     sessionStartedAt: new Date(Date.now() - 60_000).toISOString(),
-    currentSessionTaskId: null, currentSessionTaskTitle: "Deep work", currentSessionProjectId: null
+    currentSessionTaskId: null,
+    currentSessionTaskTitle: "Deep work",
+    currentSessionProjectId: null,
   };
 }
 
@@ -27,7 +42,7 @@ function mockSender(results: Array<{ ok: boolean; expired?: boolean }>): PushSen
       const next = results[index] ?? { ok: true };
       index += 1;
       return { ok: next.ok, expired: next.expired ?? false };
-    }
+    },
   };
 }
 
@@ -71,7 +86,16 @@ describe("dispatchReminder", () => {
     upsertPushSubscription(db, owner, "https://push.example/a", JSON.stringify({ endpoint: "https://push.example/a" }));
     upsertPushSubscription(db, owner, "https://push.example/b", JSON.stringify({ endpoint: "https://push.example/b" }));
     const endsAt = Date.now() - 1;
-    const outcome = await dispatchReminder(db, { profileId: owner, endsAt, mode: "pomodoro", payload: { title: "Pomodoro finished", body: "Break time", mode: "pomodoro", url: "/app" } }, mockSender([{ ok: true }, { ok: true }]));
+    const outcome = await dispatchReminder(
+      db,
+      {
+        profileId: owner,
+        endsAt,
+        mode: "pomodoro",
+        payload: { title: "Pomodoro finished", body: "Break time", mode: "pomodoro", url: "/app" },
+      },
+      mockSender([{ ok: true }, { ok: true }]),
+    );
     expect(outcome).toMatchObject({ sent: 2 });
     expect(reminderSeen(db, owner, endsAt)).toBe(true);
   });
@@ -79,9 +103,23 @@ describe("dispatchReminder", () => {
   it("drops subscriptions the push service reports as expired", async () => {
     const db = memoryDb();
     const owner = newProfile(db, "expired-owner");
-    upsertPushSubscription(db, owner, "https://push.example/gone", JSON.stringify({ endpoint: "https://push.example/gone" }));
+    upsertPushSubscription(
+      db,
+      owner,
+      "https://push.example/gone",
+      JSON.stringify({ endpoint: "https://push.example/gone" }),
+    );
     const endsAt = Date.now() - 1;
-    const outcome = await dispatchReminder(db, { profileId: owner, endsAt, mode: "pomodoro", payload: { title: "Pomodoro finished", body: "Break time", mode: "pomodoro", url: "/app" } }, mockSender([{ ok: false, expired: true }]));
+    const outcome = await dispatchReminder(
+      db,
+      {
+        profileId: owner,
+        endsAt,
+        mode: "pomodoro",
+        payload: { title: "Pomodoro finished", body: "Break time", mode: "pomodoro", url: "/app" },
+      },
+      mockSender([{ ok: false, expired: true }]),
+    );
     expect(outcome).toMatchObject({ sent: 0 });
     const rows = db.prepare("SELECT COUNT(*) AS count FROM push_subscriptions").get() as { count: number };
     expect(rows.count).toBe(0);

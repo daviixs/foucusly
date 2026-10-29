@@ -1,5 +1,11 @@
 import type { AppDatabase } from "../db.js";
-import { countRunningTimers, deletePushSubscription, listPushSubscriptions, markReminderSent, reminderSeen } from "../db.js";
+import {
+  countRunningTimers,
+  deletePushSubscription,
+  listPushSubscriptions,
+  markReminderSent,
+  reminderSeen,
+} from "../db.js";
 import { buildPushPayload, type PushPayload } from "./payload.js";
 import type { PushSender } from "./sender.js";
 
@@ -16,10 +22,22 @@ export function collectDueReminders(db: AppDatabase, now: number): DueReminder[]
   for (const timer of running) {
     if (timer.endsAt > now) continue;
     if (reminderSeen(db, timer.profileId, timer.endsAt)) continue;
-    const row = db.prepare("SELECT value FROM timer WHERE profile_id = ?").get(timer.profileId) as { value: string } | undefined;
+    const row = db.prepare("SELECT value FROM timer WHERE profile_id = ?").get(timer.profileId) as
+      | { value: string }
+      | undefined;
     let taskTitle: string | null = null;
-    try { taskTitle = (JSON.parse(row?.value ?? "{}") as { currentSessionTaskTitle?: string }).currentSessionTaskTitle ?? null; } catch { taskTitle = null; }
-    due.push({ profileId: timer.profileId, endsAt: timer.endsAt, mode: timer.mode, payload: buildPushPayload(timer.mode, taskTitle) });
+    try {
+      taskTitle =
+        (JSON.parse(row?.value ?? "{}") as { currentSessionTaskTitle?: string }).currentSessionTaskTitle ?? null;
+    } catch {
+      taskTitle = null;
+    }
+    due.push({
+      profileId: timer.profileId,
+      endsAt: timer.endsAt,
+      mode: timer.mode,
+      payload: buildPushPayload(timer.mode, taskTitle),
+    });
   }
   return due;
 }
@@ -43,7 +61,12 @@ export async function dispatchReminder(db: AppDatabase, due: DueReminder, sender
   return { profileId: due.profileId, sent, removed };
 }
 
-export async function startPushScheduler(db: AppDatabase, sender: PushSender, intervalMs: number, logger = console): Promise<() => void> {
+export async function startPushScheduler(
+  db: AppDatabase,
+  sender: PushSender,
+  intervalMs: number,
+  logger = console,
+): Promise<() => void> {
   const tick = async () => {
     try {
       const due = collectDueReminders(db, Date.now());

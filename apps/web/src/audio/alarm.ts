@@ -5,9 +5,25 @@ type AlarmSettings = Pick<Settings, "alarmSound" | "alarmVolume" | "alarmRepeat"
 /** Schedules one ring of a pattern starting at `at` and returns its length in seconds. */
 type Pattern = (ctx: AudioContext, out: AudioNode, at: number) => number;
 
-function tone(ctx: AudioContext, out: AudioNode, { at, frequency, length, type = "sine", peak = 1, endFrequency }: {
-  at: number; frequency: number; length: number; type?: OscillatorType; peak?: number; endFrequency?: number;
-}) {
+function tone(
+  ctx: AudioContext,
+  out: AudioNode,
+  {
+    at,
+    frequency,
+    length,
+    type = "sine",
+    peak = 1,
+    endFrequency,
+  }: {
+    at: number;
+    frequency: number;
+    length: number;
+    type?: OscillatorType;
+    peak?: number;
+    endFrequency?: number;
+  },
+) {
   const oscillator = ctx.createOscillator();
   const envelope = ctx.createGain();
   oscillator.type = type;
@@ -24,21 +40,42 @@ function tone(ctx: AudioContext, out: AudioNode, { at, frequency, length, type =
 
 const patterns: Record<string, Pattern> = {
   Kitchen: (ctx, out, at) => {
-    for (let hit = 0; hit < 12; hit++) tone(ctx, out, { at: at + hit * 0.09, frequency: hit % 2 ? 1568 : 1760, length: 0.08, type: "triangle", peak: 0.8 });
+    for (let hit = 0; hit < 12; hit++)
+      tone(ctx, out, {
+        at: at + hit * 0.09,
+        frequency: hit % 2 ? 1568 : 1760,
+        length: 0.08,
+        type: "triangle",
+        peak: 0.8,
+      });
     return 1.1;
   },
   Bell: (ctx, out, at) => {
-    for (const [ratio, peak] of [[1, 0.9], [2.76, 0.35], [5.4, 0.15]] as const) tone(ctx, out, { at, frequency: 659 * ratio, length: 1.6, peak });
+    for (const [ratio, peak] of [
+      [1, 0.9],
+      [2.76, 0.35],
+      [5.4, 0.15],
+    ] as const)
+      tone(ctx, out, { at, frequency: 659 * ratio, length: 1.6, peak });
     return 1.6;
   },
   Digital: (ctx, out, at) => {
-    for (let beep = 0; beep < 4; beep++) tone(ctx, out, { at: at + beep * 0.2, frequency: 1046, length: 0.11, type: "square", peak: 0.35 });
+    for (let beep = 0; beep < 4; beep++)
+      tone(ctx, out, { at: at + beep * 0.2, frequency: 1046, length: 0.11, type: "square", peak: 0.35 });
     return 0.8;
   },
   Bird: (ctx, out, at) => {
-    [0, 0.18, 0.5, 0.68].forEach((offset, index) => tone(ctx, out, { at: at + offset, frequency: index % 2 ? 2600 : 2200, endFrequency: 1500, length: 0.15, peak: 0.7 }));
+    [0, 0.18, 0.5, 0.68].forEach((offset, index) =>
+      tone(ctx, out, {
+        at: at + offset,
+        frequency: index % 2 ? 2600 : 2200,
+        endFrequency: 1500,
+        length: 0.15,
+        peak: 0.7,
+      }),
+    );
     return 0.9;
-  }
+  },
 };
 
 export const ALARM_SOUNDS = [...Object.keys(patterns), "None"];

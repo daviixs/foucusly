@@ -3,7 +3,10 @@ type AudioContextConstructor = typeof AudioContext;
 let context: AudioContext | null = null;
 
 function contextClass(): AudioContextConstructor | undefined {
-  return window.AudioContext ?? (window as typeof window & { webkitAudioContext?: AudioContextConstructor }).webkitAudioContext;
+  return (
+    window.AudioContext ??
+    (window as typeof window & { webkitAudioContext?: AudioContextConstructor }).webkitAudioContext
+  );
 }
 
 /** Returns the app-wide AudioContext, or null when Web Audio is unavailable. */
@@ -11,7 +14,11 @@ export function getAudioContext(): AudioContext | null {
   if (context) return context;
   const Ctor = contextClass();
   if (!Ctor) return null;
-  try { context = new Ctor(); } catch { return null; }
+  try {
+    context = new Ctor();
+  } catch {
+    return null;
+  }
   return context;
 }
 
@@ -20,7 +27,11 @@ export async function resumeAudio(): Promise<AudioContext | null> {
   const ctx = getAudioContext();
   if (!ctx) return null;
   if (ctx.state !== "running") {
-    try { await ctx.resume(); } catch { /* Still locked; the next user gesture unlocks it. */ }
+    try {
+      await ctx.resume();
+    } catch {
+      /* Still locked; the next user gesture unlocks it. */
+    }
   }
   return ctx;
 }

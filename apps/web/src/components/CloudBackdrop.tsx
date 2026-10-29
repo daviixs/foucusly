@@ -23,10 +23,7 @@ function CloudLayer({
   const y = (viewport.height / 2 - pointer.y) * factor;
 
   return (
-    <div
-      className={`craft-cloud-layer craft-cloud-layer--${depth}`}
-      style={{ transform: `translate(${x}px, ${y}px)` }}
-    >
+    <div className={`craft-cloud-layer craft-cloud-layer--${depth}`} style={{ transform: `translate(${x}px, ${y}px)` }}>
       <img
         className={`craft-cloud craft-cloud--${depth}${loaded ? " is-loaded" : ""}`}
         src={src}
@@ -56,12 +53,42 @@ export default function CloudBackdrop({ dark = false }: { dark?: boolean }) {
 
   return (
     <div className={`craft-cloud-backdrop${dark ? " is-dark" : ""}`} aria-hidden="true">
-      {!dark && <CloudLayer key="light-front" src={lightCloud} depth="front" factor={0.01} viewport={viewport} pointer={pointer} />}
-      <CloudLayer key={dark ? "dark-mid" : "light-mid"} src={dark ? darkCloud : lightCloud} depth="mid" factor={0.006} viewport={viewport} pointer={pointer} />
+      {!dark && (
+        <CloudLayer
+          key="light-front"
+          src={lightCloud}
+          depth="front"
+          factor={0.01}
+          viewport={viewport}
+          pointer={pointer}
+        />
+      )}
+      <CloudLayer
+        key={dark ? "dark-mid" : "light-mid"}
+        src={dark ? darkCloud : lightCloud}
+        depth="mid"
+        factor={0.006}
+        viewport={viewport}
+        pointer={pointer}
+      />
       {dark ? (
-        <CloudLayer key="dark-back" src={darkCloud} depth="dark-back" factor={0.003} viewport={viewport} pointer={pointer} />
+        <CloudLayer
+          key="dark-back"
+          src={darkCloud}
+          depth="dark-back"
+          factor={0.003}
+          viewport={viewport}
+          pointer={pointer}
+        />
       ) : (
-        <CloudLayer key="light-back" src={lightCloud} depth="back" factor={0.003} viewport={viewport} pointer={pointer} />
+        <CloudLayer
+          key="light-back"
+          src={lightCloud}
+          depth="back"
+          factor={0.003}
+          viewport={viewport}
+          pointer={pointer}
+        />
       )}
     </div>
   );

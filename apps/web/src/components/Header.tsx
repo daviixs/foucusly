@@ -8,7 +8,7 @@ import {
   SignIn,
   SignOut,
   Trash,
-  User
+  User,
 } from "@phosphor-icons/react";
 import type { Profile } from "@foucusly/contracts";
 
@@ -33,7 +33,7 @@ export function Header({
   onDeleteAccount,
   onReport,
   onSettings,
-  onSignIn
+  onSignIn,
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -62,9 +62,7 @@ export function Header({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [menuOpen]);
 
-  const avatarLabel = profile?.username?.trim()
-    ? profile.username.trim().charAt(0).toUpperCase()
-    : "U";
+  const avatarLabel = profile?.username?.trim() ? profile.username.trim().charAt(0).toUpperCase() : "U";
 
   return (
     <header className="topbar">

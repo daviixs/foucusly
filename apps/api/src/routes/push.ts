@@ -6,18 +6,25 @@ import { getVapidKeys } from "../push/vapid.js";
 import { buildPushPayload } from "../push/payload.js";
 import type { PushSender } from "../push/sender.js";
 
-interface PushRoutesOptions { db: AppDatabase; sender: PushSender; }
+interface PushRoutesOptions {
+  db: AppDatabase;
+  sender: PushSender;
+}
 
 const subscribeInput = z.object({
   subscription: z.union([z.string(), z.object({}).passthrough()]),
-  alarmType: z.string().max(40).default("timer")
+  alarmType: z.string().max(40).default("timer"),
 });
 
 const pushRateLimit = { max: 30, timeWindow: "1 minute" };
 
 function extractEndpoint(subscription: unknown): string | null {
   if (typeof subscription === "string") {
-    try { subscription = JSON.parse(subscription); } catch { return null; }
+    try {
+      subscription = JSON.parse(subscription);
+    } catch {
+      return null;
+    }
   }
   if (typeof subscription !== "object" || subscription === null) return null;
   const endpoint = (subscription as { endpoint?: unknown }).endpoint;
@@ -30,7 +37,8 @@ export const pushRoutes: FastifyPluginAsync<PushRoutesOptions> = async (app, { d
   app.post("/api/push/subscribe", { config: { rateLimit: pushRateLimit } }, async (request, reply) => {
     const owner = request.headers["x-profile-id"] as string;
     const input = subscribeInput.parse(request.body);
-    const subscription = typeof input.subscription === "string" ? input.subscription : JSON.stringify(input.subscription);
+    const subscription =
+      typeof input.subscription === "string" ? input.subscription : JSON.stringify(input.subscription);
     const endpoint = extractEndpoint(input.subscription);
     if (!endpoint) return reply.code(400).send({ error: "Subscription endpoint is missing" });
     const stored = upsertPushSubscription(db, owner, endpoint, subscription);
@@ -40,7 +48,12 @@ export const pushRoutes: FastifyPluginAsync<PushRoutesOptions> = async (app, { d
 
   app.delete("/api/push/subscribe", { config: { rateLimit: pushRateLimit } }, async (request, reply) => {
     const input = z.object({ endpoint: z.string().min(1).max(1000) }).parse(request.body);
-    if (typeof input.endpoint === "string" && !extractEndpoint(input.endpoint) && !input.endpoint.startsWith("https://")) return reply.code(400).send({ error: "Subscription endpoint is missing" });
+    if (
+      typeof input.endpoint === "string" &&
+      !extractEndpoint(input.endpoint) &&
+      !input.endpoint.startsWith("https://")
+    )
+      return reply.code(400).send({ error: "Subscription endpoint is missing" });
     if (!deletePushSubscription(db, input.endpoint)) return reply.code(404).send({ error: "Subscription not found" });
     return reply.code(204).send();
   });

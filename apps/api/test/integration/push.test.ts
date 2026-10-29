@@ -11,7 +11,7 @@ function recordingSender(delivered = true): PushSender & { received: Array<unkno
     async send(subscription) {
       received.push(subscription);
       return { ok: delivered, expired: false };
-    }
+    },
   };
 }
 
@@ -22,13 +22,16 @@ let owner: string;
 function send(method: string, path: string, body?: unknown, profileId = owner) {
   const headers: Record<string, string> = { "x-profile-id": profileId };
   const init: Parameters<FastifyInstance["inject"]>[0] = { method, url: path, headers };
-  if (body !== undefined) { headers["content-type"] = "application/json"; init.payload = body; }
+  if (body !== undefined) {
+    headers["content-type"] = "application/json";
+    init.payload = body;
+  }
   return app.inject(init);
 }
 
 const validSubscription = JSON.stringify({
   endpoint: "https://fcm.googleapis.com/fcm/send/abc123",
-  keys: { auth: "auth-key", p256dh: "dh-key" }
+  keys: { auth: "auth-key", p256dh: "dh-key" },
 });
 
 describe("web push subscriptions and test notifications", () => {
@@ -90,10 +93,14 @@ describe("web push subscriptions and test notifications", () => {
   it("unsubscribes an endpoint, 404 for unknown ones", async () => {
     app = buildServer(db, { pushSender: recordingSender() });
     await send("POST", "/api/push/subscribe", { subscription: validSubscription });
-    const removed = await send("DELETE", "/api/push/subscribe", { endpoint: "https://fcm.googleapis.com/fcm/send/abc123" });
+    const removed = await send("DELETE", "/api/push/subscribe", {
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc123",
+    });
     expect(removed.statusCode).toBe(204);
     expect(listPushSubscriptions(db, owner)).toHaveLength(0);
-    const repeat = await send("DELETE", "/api/push/subscribe", { endpoint: "https://fcm.googleapis.com/fcm/send/abc123" });
+    const repeat = await send("DELETE", "/api/push/subscribe", {
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc123",
+    });
     expect(repeat.statusCode).toBe(404);
   });
 

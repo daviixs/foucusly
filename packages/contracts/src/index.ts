@@ -29,7 +29,7 @@ export interface Profile {
 }
 
 export const TASK_BULK_ACTIONS = ["clear-finished", "clear-pomos", "clear-all"] as const;
-export type TaskBulkAction = typeof TASK_BULK_ACTIONS[number];
+export type TaskBulkAction = (typeof TASK_BULK_ACTIONS)[number];
 
 export interface Settings {
   pomodoroMinutes: number;
@@ -48,6 +48,7 @@ export interface Settings {
   themeColor: ThemeColor;
   hourFormat: "12-hour" | "24-hour";
   darkModeWhenRunning: boolean;
+  autoDarkAtNight: boolean;
   notificationReminderMinutes: number;
   weekStartsOn: 0 | 1;
 }
@@ -141,16 +142,26 @@ export const DEFAULT_SETTINGS: Settings = {
   themeColor: "red",
   hourFormat: "24-hour",
   darkModeWhenRunning: false,
+  autoDarkAtNight: false,
   notificationReminderMinutes: 0,
-  weekStartsOn: 1
+  weekStartsOn: 1,
 };
 
 export function durationForMode(settings: Settings, mode: TimerMode): number {
-  const minutes = mode === "pomodoro"
-    ? settings.pomodoroMinutes
-    : mode === "shortBreak"
-      ? settings.shortBreakMinutes
-      : settings.longBreakMinutes;
+  const minutes =
+    mode === "pomodoro"
+      ? settings.pomodoroMinutes
+      : mode === "shortBreak"
+        ? settings.shortBreakMinutes
+        : settings.longBreakMinutes;
   return Math.max(1, minutes) * 60;
 }
 
+export const NIGHT_STARTS_AT_HOUR = 18;
+export const NIGHT_ENDS_AT_HOUR = 6;
+
+/** Night is evaluated in the browser's local time zone. */
+export function isNightTime(date: Date): boolean {
+  const hour = date.getHours();
+  return hour >= NIGHT_STARTS_AT_HOUR || hour < NIGHT_ENDS_AT_HOUR;
+}

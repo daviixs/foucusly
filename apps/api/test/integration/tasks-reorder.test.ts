@@ -11,7 +11,10 @@ let other: string;
 function send(method: string, path: string, body?: unknown, profileId = owner) {
   const headers: Record<string, string> = { "x-profile-id": profileId };
   const init: Parameters<FastifyInstance["inject"]>[0] = { method, url: path, headers };
-  if (body !== undefined) { headers["content-type"] = "application/json"; init.payload = body; }
+  if (body !== undefined) {
+    headers["content-type"] = "application/json";
+    init.payload = body;
+  }
   return app.inject(init);
 }
 
@@ -25,7 +28,9 @@ async function createThreeTasks(): Promise<string[]> {
 }
 
 async function orderedTitles(): Promise<string[]> {
-  const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": owner } })).json()) as { tasks: Array<{ title: string; sortOrder: number }> };
+  const bootstrap = (await (
+    await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": owner } })
+  ).json()) as { tasks: Array<{ title: string; sortOrder: number }> };
   return bootstrap.tasks.sort((a, b) => a.sortOrder - b.sortOrder).map((task) => task.title);
 }
 
@@ -45,7 +50,9 @@ describe("batch task reordering", () => {
 
   it("ignores unknown or foreign task ids and keeps the rest", async () => {
     const ids = await createThreeTasks();
-    const response = await send("PUT", "/api/tasks/reorder", { order: [ids[1], ids[2], "00000000-0000-4000-8000-000000000009"] });
+    const response = await send("PUT", "/api/tasks/reorder", {
+      order: [ids[1], ids[2], "00000000-0000-4000-8000-000000000009"],
+    });
     expect(response.statusCode).toBe(200);
     await expect(await orderedTitles()).toEqual(["First", "Second", "Third"]);
   });
@@ -56,7 +63,9 @@ describe("batch task reordering", () => {
     const foreign = await send("PUT", "/api/tasks/reorder", { order: [ids[2], ids[1], ids[0]] }, other);
     expect(foreign.statusCode).toBe(400);
     expect(await orderedTitles()).toEqual(["First", "Second", "Third"]);
-    const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": other } })).json()) as { tasks: unknown[] };
+    const bootstrap = (await (
+      await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": other } })
+    ).json()) as { tasks: unknown[] };
     expect(bootstrap.tasks).toHaveLength(0);
   });
 

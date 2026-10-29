@@ -10,7 +10,7 @@ export interface PushPayload {
 const stageLabels: Record<TimerMode, { title: string; body: string }> = {
   pomodoro: { title: "Pomodoro finished", body: "Time for a break. Take your eyes off the screen." },
   shortBreak: { title: "Short break finished", body: "Break is over. Ready for another Pomodoro?" },
-  longBreak: { title: "Long break finished", body: "Break is over. Ready for another Pomodoro?" }
+  longBreak: { title: "Long break finished", body: "Break is over. Ready for another Pomodoro?" },
 };
 
 export function buildPushPayload(mode: string, taskTitle?: string | null): PushPayload {

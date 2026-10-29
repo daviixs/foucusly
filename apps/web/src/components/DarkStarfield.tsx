@@ -24,7 +24,7 @@ type ShootingStar = {
 const randomGenerator = (seed: number) => {
   let state = seed | 0;
   const next = () => {
-    let value = state += 1831565813;
+    let value = (state += 1831565813);
     value = Math.imul(value ^ (value >>> 15), value | 1);
     value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
@@ -142,8 +142,8 @@ export default function DarkStarfield() {
       previousTime = time;
       elapsed += delta;
       for (const star of stars) {
-        star.x = ((star.x + star.driftX * delta) % 1 + 1) % 1;
-        star.y = ((star.y + star.driftY * delta) % 1 + 1) % 1;
+        star.x = (((star.x + star.driftX * delta) % 1) + 1) % 1;
+        star.y = (((star.y + star.driftY * delta) % 1) + 1) % 1;
       }
       shootingCountdown -= delta;
       if (shootingCountdown <= 0) {

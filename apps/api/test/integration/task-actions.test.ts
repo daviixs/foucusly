@@ -8,23 +8,36 @@ let app: FastifyInstance;
 let owner: string;
 let other: string;
 
-interface TaskSummary { id: string; title: string; completed: boolean; completedPomos: number; sortOrder: number; }
+interface TaskSummary {
+  id: string;
+  title: string;
+  completed: boolean;
+  completedPomos: number;
+  sortOrder: number;
+}
 
 function send(method: string, path: string, body?: unknown, profileId = owner) {
   const headers: Record<string, string> = { "x-profile-id": profileId };
   const init: Parameters<FastifyInstance["inject"]>[0] = { method, url: path, headers };
-  if (body !== undefined) { headers["content-type"] = "application/json"; init.payload = body; }
+  if (body !== undefined) {
+    headers["content-type"] = "application/json";
+    init.payload = body;
+  }
   return app.inject(init);
 }
 
 async function createTask(title: string, patch: Record<string, unknown> = {}, profileId = owner): Promise<string> {
-  const task = (await (await send("POST", "/api/tasks", { title, estimatePomos: 4 }, profileId)).json()) as { id: string };
+  const task = (await (await send("POST", "/api/tasks", { title, estimatePomos: 4 }, profileId)).json()) as {
+    id: string;
+  };
   if (Object.keys(patch).length) await send("PATCH", `/api/tasks/${task.id}`, patch, profileId);
   return task.id;
 }
 
 async function tasksOf(profileId = owner): Promise<TaskSummary[]> {
-  const bootstrap = (await (await send("GET", "/api/bootstrap", undefined, profileId)).json()) as { tasks: TaskSummary[] };
+  const bootstrap = (await (await send("GET", "/api/bootstrap", undefined, profileId)).json()) as {
+    tasks: TaskSummary[];
+  };
   return bootstrap.tasks;
 }
 
@@ -85,7 +98,10 @@ describe("removed task features", () => {
   });
 
   it("ignores a stored hidden-tasks setting from older databases", () => {
-    db.prepare("UPDATE settings SET value=? WHERE profile_id=?").run(JSON.stringify({ tasksVisible: false, pomodoroMinutes: 30 }), owner);
+    db.prepare("UPDATE settings SET value=? WHERE profile_id=?").run(
+      JSON.stringify({ tasksVisible: false, pomodoroMinutes: 30 }),
+      owner,
+    );
     const settings = readSettings(db, owner);
     expect(settings).not.toHaveProperty("tasksVisible");
     expect(settings.pomodoroMinutes).toBe(30);

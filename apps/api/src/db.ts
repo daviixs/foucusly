@@ -3,7 +3,15 @@ import type { Database as DatabaseType } from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Profile, type Project, type Settings, type TimerState } from "@foucusly/contracts";
+import {
+  DEFAULT_SETTINGS,
+  durationForMode,
+  type BootstrapData,
+  type Profile,
+  type Project,
+  type Settings,
+  type TimerState,
+} from "@foucusly/contracts";
 
 const defaultTimer = (settings: Settings): TimerState => ({
   mode: "pomodoro",
@@ -16,7 +24,7 @@ const defaultTimer = (settings: Settings): TimerState => ({
   sessionStartedAt: null,
   currentSessionTaskId: null,
   currentSessionTaskTitle: null,
-  currentSessionProjectId: null
+  currentSessionProjectId: null,
 });
 
 function ensureColumn(db: DatabaseType, table: string, column: string, definition: string) {
@@ -118,7 +126,9 @@ export function createDatabase(path = process.env.DATABASE_PATH ?? "data/foucusl
 export type AppDatabase = ReturnType<typeof createDatabase>;
 
 export function listProfiles(db: AppDatabase): Profile[] {
-  return db.prepare("SELECT id, username, created_at AS createdAt FROM profiles ORDER BY created_at, username COLLATE NOCASE").all() as Profile[];
+  return db
+    .prepare("SELECT id, username, created_at AS createdAt FROM profiles ORDER BY created_at, username COLLATE NOCASE")
+    .all() as Profile[];
 }
 
 export function createProfile(db: AppDatabase, username: string): Profile {
@@ -133,7 +143,10 @@ export function createProfile(db: AppDatabase, username: string): Profile {
       }
     } else {
       db.prepare("INSERT INTO settings (profile_id, value) VALUES (?, ?)").run(id, JSON.stringify(DEFAULT_SETTINGS));
-      db.prepare("INSERT INTO timer (profile_id, value) VALUES (?, ?)").run(id, JSON.stringify(defaultTimer(DEFAULT_SETTINGS)));
+      db.prepare("INSERT INTO timer (profile_id, value) VALUES (?, ?)").run(
+        id,
+        JSON.stringify(defaultTimer(DEFAULT_SETTINGS)),
+      );
     }
   });
   create();
@@ -141,7 +154,9 @@ export function createProfile(db: AppDatabase, username: string): Profile {
 }
 
 export function findProfile(db: AppDatabase, id: string): Profile | undefined {
-  return db.prepare("SELECT id, username, created_at AS createdAt FROM profiles WHERE id = ?").get(id) as Profile | undefined;
+  return db.prepare("SELECT id, username, created_at AS createdAt FROM profiles WHERE id = ?").get(id) as
+    | Profile
+    | undefined;
 }
 
 export function deleteProfile(db: AppDatabase, profileId: string): void {
@@ -164,8 +179,9 @@ export function readSettings(db: AppDatabase, profileId: string): Settings {
 }
 
 export function writeSettings(db: AppDatabase, profileId: string, settings: Settings) {
-  db.prepare("INSERT INTO settings (profile_id, value) VALUES (?, ?) ON CONFLICT(profile_id) DO UPDATE SET value = excluded.value")
-    .run(profileId, JSON.stringify(settings));
+  db.prepare(
+    "INSERT INTO settings (profile_id, value) VALUES (?, ?) ON CONFLICT(profile_id) DO UPDATE SET value = excluded.value",
+  ).run(profileId, JSON.stringify(settings));
 }
 
 export function readTimer(db: AppDatabase, profileId: string): TimerState {
@@ -176,13 +192,14 @@ export function readTimer(db: AppDatabase, profileId: string): TimerState {
     ...stored,
     currentSessionTaskId: stored.currentSessionTaskId ?? stored.activeTaskId ?? null,
     currentSessionTaskTitle: stored.currentSessionTaskTitle ?? null,
-    currentSessionProjectId: stored.currentSessionProjectId ?? null
+    currentSessionProjectId: stored.currentSessionProjectId ?? null,
   };
 }
 
 export function writeTimer(db: AppDatabase, profileId: string, timer: TimerState) {
-  db.prepare("INSERT INTO timer (profile_id, value) VALUES (?, ?) ON CONFLICT(profile_id) DO UPDATE SET value = excluded.value")
-    .run(profileId, JSON.stringify(timer));
+  db.prepare(
+    "INSERT INTO timer (profile_id, value) VALUES (?, ?) ON CONFLICT(profile_id) DO UPDATE SET value = excluded.value",
+  ).run(profileId, JSON.stringify(timer));
 }
 
 export interface StoredPushSubscription {
@@ -192,10 +209,16 @@ export interface StoredPushSubscription {
   createdAt: string;
 }
 
-export function upsertPushSubscription(db: AppDatabase, profileId: string, endpoint: string, subscription: string): StoredPushSubscription {
+export function upsertPushSubscription(
+  db: AppDatabase,
+  profileId: string,
+  endpoint: string,
+  subscription: string,
+): StoredPushSubscription {
   const createdAt = new Date().toISOString();
-  db.prepare("INSERT INTO push_subscriptions (endpoint, profile_id, value, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET profile_id = excluded.profile_id, value = excluded.value")
-    .run(endpoint, profileId, subscription, createdAt);
+  db.prepare(
+    "INSERT INTO push_subscriptions (endpoint, profile_id, value, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET profile_id = excluded.profile_id, value = excluded.value",
+  ).run(endpoint, profileId, subscription, createdAt);
   return { endpoint, profileId, subscription: JSON.parse(subscription) as unknown, createdAt };
 }
 
@@ -205,29 +228,51 @@ export function deletePushSubscription(db: AppDatabase, endpoint: string): boole
 
 export function listPushSubscriptions(db: AppDatabase, profileId?: string): StoredPushSubscription[] {
   const rows = profileId
-    ? db.prepare("SELECT endpoint, profile_id AS profileId, value, created_at AS createdAt FROM push_subscriptions WHERE profile_id = ?").all(profileId)
-    : db.prepare("SELECT endpoint, profile_id AS profileId, value, created_at AS createdAt FROM push_subscriptions").all();
-  return (rows as Array<Omit<StoredPushSubscription, "subscription"> & { value: string }>).map((row) => ({ endpoint: row.endpoint, profileId: row.profileId, createdAt: row.createdAt, subscription: JSON.parse(row.value) as unknown }));
+    ? db
+        .prepare(
+          "SELECT endpoint, profile_id AS profileId, value, created_at AS createdAt FROM push_subscriptions WHERE profile_id = ?",
+        )
+        .all(profileId)
+    : db
+        .prepare("SELECT endpoint, profile_id AS profileId, value, created_at AS createdAt FROM push_subscriptions")
+        .all();
+  return (rows as Array<Omit<StoredPushSubscription, "subscription"> & { value: string }>).map((row) => ({
+    endpoint: row.endpoint,
+    profileId: row.profileId,
+    createdAt: row.createdAt,
+    subscription: JSON.parse(row.value) as unknown,
+  }));
 }
 
 export function countRunningTimers(db: AppDatabase): Array<{ profileId: string; endsAt: number; mode: string }> {
-  const rows = db.prepare("SELECT profile_id, value FROM timer WHERE value NOT LIKE '%\"running\":false%'").all() as Array<{ profile_id: string; value: string }>;
+  const rows = db
+    .prepare("SELECT profile_id, value FROM timer WHERE value NOT LIKE '%\"running\":false%'")
+    .all() as Array<{ profile_id: string; value: string }>;
   const due: Array<{ profileId: string; endsAt: number; mode: string }> = [];
   for (const row of rows) {
     try {
       const timer = JSON.parse(row.value) as { running: boolean; endsAt: number | null; mode: string };
-      if (timer.running && typeof timer.endsAt === "number") due.push({ profileId: row.profile_id, endsAt: timer.endsAt, mode: timer.mode });
-    } catch { continue; }
+      if (timer.running && typeof timer.endsAt === "number")
+        due.push({ profileId: row.profile_id, endsAt: timer.endsAt, mode: timer.mode });
+    } catch {
+      continue;
+    }
   }
   return due;
 }
 
 export function reminderSeen(db: AppDatabase, profileId: string, endsAt: number): boolean {
-  return Boolean(db.prepare("SELECT 1 FROM push_reminders WHERE profile_id = ? AND ends_at = ?").get(profileId, endsAt));
+  return Boolean(
+    db.prepare("SELECT 1 FROM push_reminders WHERE profile_id = ? AND ends_at = ?").get(profileId, endsAt),
+  );
 }
 
 export function markReminderSent(db: AppDatabase, profileId: string, endsAt: number): void {
-  db.prepare("INSERT OR IGNORE INTO push_reminders (profile_id, ends_at, sent_at) VALUES (?, ?, ?)").run(profileId, endsAt, new Date().toISOString());
+  db.prepare("INSERT OR IGNORE INTO push_reminders (profile_id, ends_at, sent_at) VALUES (?, ?, ?)").run(
+    profileId,
+    endsAt,
+    new Date().toISOString(),
+  );
 }
 
 export function getConfigValue(db: AppDatabase, key: string): string | undefined {
@@ -236,20 +281,27 @@ export function getConfigValue(db: AppDatabase, key: string): string | undefined
 }
 
 export function putConfigValue(db: AppDatabase, key: string, value: string): void {
-  db.prepare("INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+  db.prepare(
+    "INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+  ).run(key, value);
 }
 
 export function readBootstrap(db: AppDatabase, profileId: string): BootstrapData {
-  const tasks = db.prepare("SELECT id, title, note, estimate_pomos AS estimatePomos, completed_pomos AS completedPomos, completed, sort_order AS sortOrder, created_at AS createdAt, project_id AS projectId FROM tasks WHERE profile_id = ? ORDER BY sort_order, created_at")
+  const tasks = db
+    .prepare(
+      "SELECT id, title, note, estimate_pomos AS estimatePomos, completed_pomos AS completedPomos, completed, sort_order AS sortOrder, created_at AS createdAt, project_id AS projectId FROM tasks WHERE profile_id = ? ORDER BY sort_order, created_at",
+    )
     .all(profileId) as Array<Omit<BootstrapData["tasks"][number], "completed"> & { completed: number }>;
-  const projects = db.prepare("SELECT id, name, created_at AS createdAt, archived_at AS archivedAt, color FROM projects WHERE profile_id = ? AND archived_at IS NULL ORDER BY name COLLATE NOCASE")
+  const projects = db
+    .prepare(
+      "SELECT id, name, created_at AS createdAt, archived_at AS archivedAt, color FROM projects WHERE profile_id = ? AND archived_at IS NULL ORDER BY name COLLATE NOCASE",
+    )
     .all(profileId) as Project[];
   return {
     profile: findProfile(db, profileId)!,
     tasks: tasks.map((task) => ({ ...task, completed: Boolean(task.completed) })),
     projects,
     settings: readSettings(db, profileId),
-    timer: readTimer(db, profileId)
+    timer: readTimer(db, profileId),
   };
 }
-

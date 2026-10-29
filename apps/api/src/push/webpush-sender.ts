@@ -6,7 +6,10 @@ export function createWebPushSender(vapid: { publicKey: string; privateKey: stri
   return {
     async send(subscription, payload) {
       try {
-        await webpush.sendNotification(subscription as Parameters<typeof webpush.sendNotification>[0], JSON.stringify(payload));
+        await webpush.sendNotification(
+          subscription as Parameters<typeof webpush.sendNotification>[0],
+          JSON.stringify(payload),
+        );
         return { ok: true, expired: false };
       } catch (error) {
         const failure = error as Partial<WebPushError>;
@@ -14,9 +17,9 @@ export function createWebPushSender(vapid: { publicKey: string; privateKey: stri
         return {
           ok: false,
           expired: typeof failure.statusCode === "number" && expirationStatusCodes.has(failure.statusCode),
-          reason: failure instanceof Error ? failure.message : "Unknown web push error"
+          reason: failure instanceof Error ? failure.message : "Unknown web push error",
         };
       }
-    }
+    },
   };
 }

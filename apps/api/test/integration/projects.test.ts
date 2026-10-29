@@ -11,7 +11,10 @@ let other: string;
 function send(method: string, path: string, body?: unknown, profileId = owner) {
   const headers: Record<string, string> = { "x-profile-id": profileId };
   const init: Parameters<FastifyInstance["inject"]>[0] = { method, url: path, headers };
-  if (body !== undefined) { headers["content-type"] = "application/json"; init.payload = body; }
+  if (body !== undefined) {
+    headers["content-type"] = "application/json";
+    init.payload = body;
+  }
   return app.inject(init);
 }
 
@@ -52,18 +55,33 @@ describe("archived project listing, restore and visual attributes", () => {
 
   it("archiving detaches tasks but keeps focus history", async () => {
     const project = (await (await send("POST", "/api/projects", { name: "Side quest" })).json()) as { id: string };
-    const task = (await (await send("POST", "/api/tasks", { title: "Pick up", projectId: project.id })).json()) as { id: string };
-    await send("POST", "/api/sessions/manual", { startedAt: new Date(Date.now() - 900_000).toISOString(), endedAt: new Date().toISOString(), projectId: project.id, taskTitle: "Focus" });
+    const task = (await (await send("POST", "/api/tasks", { title: "Pick up", projectId: project.id })).json()) as {
+      id: string;
+    };
+    await send("POST", "/api/sessions/manual", {
+      startedAt: new Date(Date.now() - 900_000).toISOString(),
+      endedAt: new Date().toISOString(),
+      projectId: project.id,
+      taskTitle: "Focus",
+    });
     await send("DELETE", `/api/projects/${project.id}`);
-    const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": owner } })).json()) as { tasks: Array<{ projectId: string | null }> };
+    const bootstrap = (await (
+      await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": owner } })
+    ).json()) as { tasks: Array<{ projectId: string | null }> };
     expect(bootstrap.tasks.find((row) => row.id === task.id)?.projectId).toBeNull();
-    const detail = await app.inject({ method: "GET", url: "/api/reports/detail?period=week&date=" + new Date().toISOString().slice(0, 10), headers: { "x-profile-id": owner } });
+    const detail = await app.inject({
+      method: "GET",
+      url: "/api/reports/detail?period=week&date=" + new Date().toISOString().slice(0, 10),
+      headers: { "x-profile-id": owner },
+    });
     const sessions = (detail.json() as { sessions: Array<{ projectId: string | null }> }).sessions;
     expect(sessions[0]?.projectId).toBe(project.id);
   });
 
   it("restores an archived project", async () => {
-    const project = (await (await send("POST", "/api/projects", { name: "Comeback", color: "#b8b5ff" })).json()) as { id: string };
+    const project = (await (await send("POST", "/api/projects", { name: "Comeback", color: "#b8b5ff" })).json()) as {
+      id: string;
+    };
     await send("DELETE", `/api/projects/${project.id}`);
     const restored = await send("POST", `/api/projects/${project.id}/restore`);
     expect(restored.statusCode).toBe(200);

@@ -4,7 +4,9 @@ import { reportDetailRoutes } from "./detail.js";
 import { reportRankingRoutes } from "./ranking.js";
 import { reportSummaryRoutes } from "./summary.js";
 
-interface Options { db: AppDatabase; }
+interface Options {
+  db: AppDatabase;
+}
 
 export const reportRoutes: FastifyPluginAsync<Options> = async (app, options) => {
   await app.register(reportSummaryRoutes, options);

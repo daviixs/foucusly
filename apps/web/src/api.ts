@@ -1,4 +1,16 @@
-import type { BootstrapData, DetailedSession, Profile, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskBulkAction, TimerState } from "@foucusly/contracts";
+import type {
+  BootstrapData,
+  DetailedSession,
+  Profile,
+  Project,
+  RankingEntry,
+  ReportData,
+  ReportPeriod,
+  Settings,
+  Task,
+  TaskBulkAction,
+  TimerState,
+} from "@foucusly/contracts";
 
 let activeProfileId = "";
 const apiOrigin = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
@@ -7,10 +19,14 @@ async function request<T>(path: string, init?: RequestInit, profileScoped = true
   const response = await fetch(`${apiOrigin}/api${path}`, {
     ...init,
     // Fastify rejects an empty body declared as JSON, so bodiless POST/DELETE calls must omit the header.
-    headers: { ...(init?.body !== undefined ? { "content-type": "application/json" } : {}), ...(profileScoped && activeProfileId ? { "x-profile-id": activeProfileId } : {}), ...init?.headers }
+    headers: {
+      ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(profileScoped && activeProfileId ? { "x-profile-id": activeProfileId } : {}),
+      ...init?.headers,
+    },
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new Error(body?.error ?? `Request failed (${response.status})`);
   }
   if (response.status === 204) return undefined as T;
@@ -18,34 +34,79 @@ async function request<T>(path: string, init?: RequestInit, profileScoped = true
 }
 
 export const api = {
-  setActiveProfile: (id: string) => { activeProfileId = id; },
+  setActiveProfile: (id: string) => {
+    activeProfileId = id;
+  },
   profiles: () => request<Profile[]>("/profiles", undefined, false),
-  createProfile: (username: string) => request<Profile>("/profiles", { method: "POST", body: JSON.stringify({ username }) }, false),
-  deleteProfile: (id: string) => request<void>(`/profiles/${id}`, { method: "DELETE", headers: { "x-profile-id": id } }, false),
+  createProfile: (username: string) =>
+    request<Profile>("/profiles", { method: "POST", body: JSON.stringify({ username }) }, false),
+  deleteProfile: (id: string) =>
+    request<void>(`/profiles/${id}`, { method: "DELETE", headers: { "x-profile-id": id } }, false),
   bootstrap: () => request<BootstrapData>("/bootstrap"),
-  saveSettings: (settings: Settings) => request<Settings>("/settings", { method: "PUT", body: JSON.stringify(settings) }),
+  saveSettings: (settings: Settings) =>
+    request<Settings>("/settings", { method: "PUT", body: JSON.stringify(settings) }),
   saveTimer: (timer: TimerState) => request<TimerState>("/timer", { method: "PUT", body: JSON.stringify(timer) }),
-  createTask: (task: Pick<Task, "title" | "note" | "estimatePomos" | "projectId">) => request<Task>("/tasks", { method: "POST", body: JSON.stringify(task) }),
-  updateTask: (id: string, patch: Partial<Task>) => request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  createTask: (task: Pick<Task, "title" | "note" | "estimatePomos" | "projectId">) =>
+    request<Task>("/tasks", { method: "POST", body: JSON.stringify(task) }),
+  updateTask: (id: string, patch: Partial<Task>) =>
+    request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: "DELETE" }),
-  reorderTasks: (order: string[]) => request<BootstrapData>("/tasks/reorder", { method: "PUT", body: JSON.stringify({ order }) }),
+  reorderTasks: (order: string[]) =>
+    request<BootstrapData>("/tasks/reorder", { method: "PUT", body: JSON.stringify({ order }) }),
   taskAction: (action: TaskBulkAction) => request<BootstrapData>(`/tasks/actions/${action}`, { method: "POST" }),
-  createProject: (name: string, color: string | null = null) => request<Project>("/projects", { method: "POST", body: JSON.stringify({ name, color }) }),
-  updateProject: (id: string, patch: Pick<Project, "color">) => request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  createProject: (name: string, color: string | null = null) =>
+    request<Project>("/projects", { method: "POST", body: JSON.stringify({ name, color }) }),
+  updateProject: (id: string, patch: Pick<Project, "color">) =>
+    request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   archivedProjects: () => request<Project[]>("/projects/archived"),
   restoreProject: (id: string) => request<Project>(`/projects/${id}/restore`, { method: "POST" }),
-  renameProject: (id: string, name: string) => request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  renameProject: (id: string, name: string) =>
+    request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
   archiveProject: (id: string) => request<void>(`/projects/${id}`, { method: "DELETE" }),
-  addManualSession: (session: { mode?: "pomodoro" | "shortBreak" | "longBreak"; startedAt: string; endedAt: string; taskId?: string | null; taskTitle?: string | null; projectId?: string | null }) => request<{ saved: boolean; session: DetailedSession }>("/sessions/manual", { method: "POST", body: JSON.stringify(session) }),
-  updateSession: (id: string, patch: { taskTitle?: string | null; startedAt?: string; endedAt?: string; taskId?: string | null; projectId?: string | null }) => request<DetailedSession>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  addManualSession: (session: {
+    mode?: "pomodoro" | "shortBreak" | "longBreak";
+    startedAt: string;
+    endedAt: string;
+    taskId?: string | null;
+    taskTitle?: string | null;
+    projectId?: string | null;
+  }) =>
+    request<{ saved: boolean; session: DetailedSession }>("/sessions/manual", {
+      method: "POST",
+      body: JSON.stringify(session),
+    }),
+  updateSession: (
+    id: string,
+    patch: {
+      taskTitle?: string | null;
+      startedAt?: string;
+      endedAt?: string;
+      taskId?: string | null;
+      projectId?: string | null;
+    },
+  ) => request<DetailedSession>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteSession: (id: string) => request<void>(`/sessions/${id}`, { method: "DELETE" }),
   pushPublicKey: () => request<{ publicKey: string }>("/push/public-key"),
-  subscribePush: (subscription: string) => request<{ endpoint: string }>("/push/subscribe", { method: "POST", body: JSON.stringify({ subscription }) }),
-  unsubscribePush: (endpoint: string) => request<void>("/push/subscribe", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
+  subscribePush: (subscription: string) =>
+    request<{ endpoint: string }>("/push/subscribe", { method: "POST", body: JSON.stringify({ subscription }) }),
+  unsubscribePush: (endpoint: string) =>
+    request<void>("/push/subscribe", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
   testPush: () => request<{ ok: boolean; delivered: number; total: number }>("/push/test", { method: "POST" }),
-  completeSession: (session: { id: string; mode: TimerState["mode"]; startedAt: string; endedAt: string; durationSeconds: number; taskId: string | null; taskTitle: string | null; projectId: string | null }) => request<{ saved: true; duplicate: boolean }>("/sessions", { method: "POST", body: JSON.stringify(session) }),
+  completeSession: (session: {
+    id: string;
+    mode: TimerState["mode"];
+    startedAt: string;
+    endedAt: string;
+    durationSeconds: number;
+    taskId: string | null;
+    taskTitle: string | null;
+    projectId: string | null;
+  }) => request<{ saved: true; duplicate: boolean }>("/sessions", { method: "POST", body: JSON.stringify(session) }),
   report: (period: ReportPeriod, date: string) => request<ReportData>(`/reports?period=${period}&date=${date}`),
-  reportDetail: (period: ReportPeriod, date: string) => request<{ sessions: DetailedSession[] }>(`/reports/detail?period=${period}&date=${date}`),
-  reportRanking: (period: ReportPeriod, date: string, by: "project" | "task") => request<{ by: "project" | "task"; entries: RankingEntry[] }>(`/reports/ranking?period=${period}&date=${date}&by=${by}`)
+  reportDetail: (period: ReportPeriod, date: string) =>
+    request<{ sessions: DetailedSession[] }>(`/reports/detail?period=${period}&date=${date}`),
+  reportRanking: (period: ReportPeriod, date: string, by: "project" | "task") =>
+    request<{ by: "project" | "task"; entries: RankingEntry[] }>(
+      `/reports/ranking?period=${period}&date=${date}&by=${by}`,
+    ),
 };
-

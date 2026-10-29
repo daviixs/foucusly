@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwise, Crown, Keyboard, Trash, X } from "@phosphor-icons/react";
-import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Profile, type Settings, type Task, type TaskBulkAction, type TimerMode, type TimerState } from "@foucusly/contracts";
+import {
+  DEFAULT_SETTINGS,
+  NIGHT_ENDS_AT_HOUR,
+  NIGHT_STARTS_AT_HOUR,
+  durationForMode,
+  isNightTime,
+  type BootstrapData,
+  type Profile,
+  type Settings,
+  type Task,
+  type TaskBulkAction,
+  type TimerMode,
+  type TimerState,
+} from "@foucusly/contracts";
 import { api } from "./api";
 import { Header } from "./components/Header";
 import { ReportDialog } from "./components/ReportDialog";
@@ -14,9 +27,35 @@ import { installAudioUnlock } from "./audio/engine";
 import { startFocusSound } from "./audio/focusSound";
 import { ProfileGate } from "./components/ProfileGate";
 
-const freshTimer = (settings: Settings, mode: TimerMode, activeTaskId: string | null, cyclePomos: number): TimerState => ({
-  mode, remainingSeconds: durationForMode(settings, mode), running: false, endsAt: null, cyclePomos, activeTaskId,
-  currentSessionId: null, sessionStartedAt: null, currentSessionTaskId: null, currentSessionTaskTitle: null, currentSessionProjectId: null
+const msUntilNextDayNightSwitch = (date: Date) => {
+  const next = new Date(date);
+  const hour = date.getHours();
+  if (hour < NIGHT_ENDS_AT_HOUR) next.setHours(NIGHT_ENDS_AT_HOUR, 0, 0, 0);
+  else if (hour < NIGHT_STARTS_AT_HOUR) next.setHours(NIGHT_STARTS_AT_HOUR, 0, 0, 0);
+  else {
+    next.setDate(next.getDate() + 1);
+    next.setHours(NIGHT_ENDS_AT_HOUR, 0, 0, 0);
+  }
+  return Math.max(1000, next.getTime() - date.getTime());
+};
+
+const freshTimer = (
+  settings: Settings,
+  mode: TimerMode,
+  activeTaskId: string | null,
+  cyclePomos: number,
+): TimerState => ({
+  mode,
+  remainingSeconds: durationForMode(settings, mode),
+  running: false,
+  endsAt: null,
+  cyclePomos,
+  activeTaskId,
+  currentSessionId: null,
+  sessionStartedAt: null,
+  currentSessionTaskId: null,
+  currentSessionTaskTitle: null,
+  currentSessionProjectId: null,
 });
 
 export function App() {
@@ -32,6 +71,7 @@ export function App() {
   const [premiumDialogOpen, setPremiumDialogOpen] = useState(false);
   const [timer, setTimer] = useState<TimerState | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [isNight, setIsNight] = useState(() => isNightTime(new Date()));
   const [loadingError, setLoadingError] = useState("");
   const [dialog, setDialog] = useState<"settings" | "report" | "signin" | null>(null);
   const [toast, setToast] = useState("");
@@ -40,7 +80,7 @@ export function App() {
 
   const notify = useCallback((message: string) => {
     setToast(message);
-    window.setTimeout(() => setToast((current) => current === message ? "" : current), 3200);
+    window.setTimeout(() => setToast((current) => (current === message ? "" : current)), 3200);
   }, []);
 
   useEffect(() => {
@@ -58,26 +98,39 @@ export function App() {
     return loaded;
   }, []);
 
-  const activateProfile = useCallback(async (next: Profile) => {
-    api.setActiveProfile(next.id);
-    window.localStorage.setItem("foucusly-profile-id", next.id);
-    setProfile(next);
-    setData(null);
-    setTimer(null);
-    try { await loadData(); }
-    catch (error) { setLoadingError((error as Error).message); }
-  }, [loadData]);
+  const activateProfile = useCallback(
+    async (next: Profile) => {
+      api.setActiveProfile(next.id);
+      window.localStorage.setItem("foucusly-profile-id", next.id);
+      setProfile(next);
+      setData(null);
+      setTimer(null);
+      try {
+        await loadData();
+      } catch (error) {
+        setLoadingError((error as Error).message);
+      }
+    },
+    [loadData],
+  );
 
   useEffect(() => {
     let cancelled = false;
-    void api.profiles().then(async (available) => {
-      if (cancelled) return;
-      setProfiles(available);
-      const savedId = window.localStorage.getItem("foucusly-profile-id");
-      const savedProfile = available.find((item) => item.id === savedId);
-      if (savedProfile) await activateProfile(savedProfile);
-    }).catch((error: Error) => { if (!cancelled) setLoadingError(error.message); });
-    return () => { cancelled = true; };
+    void api
+      .profiles()
+      .then(async (available) => {
+        if (cancelled) return;
+        setProfiles(available);
+        const savedId = window.localStorage.getItem("foucusly-profile-id");
+        const savedProfile = available.find((item) => item.id === savedId);
+        if (savedProfile) await activateProfile(savedProfile);
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setLoadingError(error.message);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [activateProfile]);
 
   const createLocalProfile = async (username: string) => {
@@ -129,65 +182,125 @@ export function App() {
     setProfileDialogOpen(true);
     if (previousName) notify(`Logged out from “${previousName}”.`);
   };
-  useEffect(() => { timerRef.current = timer; }, [timer]);
+  useEffect(() => {
+    timerRef.current = timer;
+  }, [timer]);
 
   useEffect(() => installAudioUnlock(), []);
+
+  useEffect(() => {
+    let timeout = 0;
+    const update = () => {
+      window.clearTimeout(timeout);
+      const current = new Date();
+      setIsNight(isNightTime(current));
+      timeout = window.setTimeout(update, msUntilNextDayNightSwitch(current));
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") update();
+    };
+    update();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearTimeout(timeout);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     if (!timer?.running || !data) return;
     return startFocusSound(data.settings.focusSound, data.settings.focusVolume);
   }, [timer?.running, data?.settings.focusSound, data?.settings.focusVolume]);
 
-  const persistTimer = useCallback(async (next: TimerState) => {
-    setTimer(next);
-    timerRef.current = next;
-    try { const saved = await api.saveTimer(next); setTimer(saved); timerRef.current = saved; }
-    catch (error) { notify(`Timer could not be saved: ${(error as Error).message}`); }
-  }, [notify]);
+  const persistTimer = useCallback(
+    async (next: TimerState) => {
+      setTimer(next);
+      timerRef.current = next;
+      try {
+        const saved = await api.saveTimer(next);
+        setTimer(saved);
+        timerRef.current = saved;
+      } catch (error) {
+        notify(`Timer could not be saved: ${(error as Error).message}`);
+      }
+    },
+    [notify],
+  );
 
-  const finishSession = useCallback(async (current: TimerState) => {
-    if (finishing.current) return;
-    finishing.current = true;
-    const endedAt = new Date().toISOString();
-    const settings = data?.settings ?? DEFAULT_SETTINGS;
-    const duration = durationForMode(settings, current.mode);
-    void playAlarm(settings);
-    try {
-      if (current.currentSessionId && current.sessionStartedAt) {
-        await api.completeSession({ id: current.currentSessionId, mode: current.mode, startedAt: current.sessionStartedAt, endedAt, durationSeconds: duration, taskId: current.currentSessionTaskId, taskTitle: current.currentSessionTaskTitle, projectId: current.currentSessionProjectId });
+  const finishSession = useCallback(
+    async (current: TimerState) => {
+      if (finishing.current) return;
+      finishing.current = true;
+      const endedAt = new Date().toISOString();
+      const settings = data?.settings ?? DEFAULT_SETTINGS;
+      const duration = durationForMode(settings, current.mode);
+      void playAlarm(settings);
+      try {
+        if (current.currentSessionId && current.sessionStartedAt) {
+          await api.completeSession({
+            id: current.currentSessionId,
+            mode: current.mode,
+            startedAt: current.sessionStartedAt,
+            endedAt,
+            durationSeconds: duration,
+            taskId: current.currentSessionTaskId,
+            taskTitle: current.currentSessionTaskTitle,
+            projectId: current.currentSessionProjectId,
+          });
+        }
+        if (
+          settings.notificationReminderMinutes > 0 &&
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          new Notification(current.mode === "pomodoro" ? "Pomodoro complete" : "Break complete", {
+            body: current.mode === "pomodoro" ? "Time for a short break." : "Ready to focus again?",
+          });
+        }
+        const cyclePomos = current.mode === "pomodoro" ? current.cyclePomos + 1 : current.cyclePomos;
+        const nextMode: TimerMode =
+          current.mode === "pomodoro"
+            ? cyclePomos % settings.longBreakInterval === 0
+              ? "longBreak"
+              : "shortBreak"
+            : "pomodoro";
+        const autoStart = nextMode === "pomodoro" ? settings.autoStartPomodoros : settings.autoStartBreaks;
+        const nextDuration = durationForMode(settings, nextMode);
+        const startedAt = autoStart ? new Date().toISOString() : null;
+        const next: TimerState = {
+          mode: nextMode,
+          remainingSeconds: nextDuration,
+          running: autoStart,
+          endsAt: autoStart ? Date.now() + nextDuration * 1000 : null,
+          cyclePomos,
+          activeTaskId: current.activeTaskId,
+          currentSessionId: autoStart ? crypto.randomUUID() : null,
+          sessionStartedAt: startedAt,
+          currentSessionTaskId: autoStart ? current.activeTaskId : null,
+          currentSessionTaskTitle: autoStart
+            ? (data?.tasks.find((task) => task.id === current.activeTaskId)?.title ?? null)
+            : null,
+          currentSessionProjectId: autoStart
+            ? (data?.tasks.find((task) => task.id === current.activeTaskId)?.projectId ?? null)
+            : null,
+        };
+        await persistTimer(next);
+        await loadData();
+        notify(
+          current.mode === "pomodoro"
+            ? "Focus session complete. Time for a break."
+            : "Break complete. Ready for another Pomodoro?",
+        );
+      } catch (error) {
+        notify(`Could not finish session: ${(error as Error).message}`);
+        const next = { ...current, running: false, endsAt: null, remainingSeconds: 0 };
+        await persistTimer(next);
+      } finally {
+        finishing.current = false;
       }
-      if (settings.notificationReminderMinutes > 0 && "Notification" in window && Notification.permission === "granted") {
-        new Notification(current.mode === "pomodoro" ? "Pomodoro complete" : "Break complete", { body: current.mode === "pomodoro" ? "Time for a short break." : "Ready to focus again?" });
-      }
-      const cyclePomos = current.mode === "pomodoro" ? current.cyclePomos + 1 : current.cyclePomos;
-      const nextMode: TimerMode = current.mode === "pomodoro"
-        ? (cyclePomos % settings.longBreakInterval === 0 ? "longBreak" : "shortBreak")
-        : "pomodoro";
-      const autoStart = nextMode === "pomodoro" ? settings.autoStartPomodoros : settings.autoStartBreaks;
-      const nextDuration = durationForMode(settings, nextMode);
-      const startedAt = autoStart ? new Date().toISOString() : null;
-      const next: TimerState = {
-        mode: nextMode,
-        remainingSeconds: nextDuration,
-        running: autoStart,
-        endsAt: autoStart ? Date.now() + nextDuration * 1000 : null,
-        cyclePomos,
-        activeTaskId: current.activeTaskId,
-        currentSessionId: autoStart ? crypto.randomUUID() : null,
-        sessionStartedAt: startedAt,
-        currentSessionTaskId: autoStart ? current.activeTaskId : null,
-        currentSessionTaskTitle: autoStart ? data?.tasks.find((task) => task.id === current.activeTaskId)?.title ?? null : null,
-        currentSessionProjectId: autoStart ? data?.tasks.find((task) => task.id === current.activeTaskId)?.projectId ?? null : null
-      };
-      await persistTimer(next);
-      await loadData();
-      notify(current.mode === "pomodoro" ? "Focus session complete. Time for a break." : "Break complete. Ready for another Pomodoro?");
-    } catch (error) {
-      notify(`Could not finish session: ${(error as Error).message}`);
-      const next = { ...current, running: false, endsAt: null, remainingSeconds: 0 };
-      await persistTimer(next);
-    } finally { finishing.current = false; }
-  }, [data, loadData, notify, persistTimer]);
+    },
+    [data, loadData, notify, persistTimer],
+  );
 
   useEffect(() => {
     if (!timer?.running || timer.endsAt === null) return;
@@ -209,18 +322,24 @@ export function App() {
       const sessionStartedAt = timer.sessionStartedAt ?? new Date().toISOString();
       const newSession = !timer.currentSessionId;
       const task = data.tasks.find((item) => item.id === timer.activeTaskId);
-      void persistTimer({ ...timer, running: true, endsAt: Date.now() + timer.remainingSeconds * 1000,
-        currentSessionId: timer.currentSessionId ?? crypto.randomUUID(), sessionStartedAt,
+      void persistTimer({
+        ...timer,
+        running: true,
+        endsAt: Date.now() + timer.remainingSeconds * 1000,
+        currentSessionId: timer.currentSessionId ?? crypto.randomUUID(),
+        sessionStartedAt,
         currentSessionTaskId: newSession ? timer.activeTaskId : timer.currentSessionTaskId,
-        currentSessionTaskTitle: newSession ? task?.title ?? null : timer.currentSessionTaskTitle,
-        currentSessionProjectId: newSession ? task?.projectId ?? null : timer.currentSessionProjectId
+        currentSessionTaskTitle: newSession ? (task?.title ?? null) : timer.currentSessionTaskTitle,
+        currentSessionProjectId: newSession ? (task?.projectId ?? null) : timer.currentSessionProjectId,
       });
     }
   };
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      const isInput = ["INPUT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName ?? "") || (event.target as HTMLElement)?.isContentEditable;
+      const isInput =
+        ["INPUT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName ?? "") ||
+        (event.target as HTMLElement)?.isContentEditable;
       if ((event.key === "t" || event.key === "T") && !event.metaKey && !event.ctrlKey && !event.altKey && !isInput) {
         event.preventDefault();
         window.dispatchEvent(new CustomEvent("foucusly-add-task"));
@@ -243,16 +362,29 @@ export function App() {
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   }, [profile, toggleTimer]);
-  const seconds = useMemo(() => timer?.running && timer.endsAt !== null
-    ? Math.max(0, Math.ceil((timer.endsAt - now) / 1000))
-    : timer?.remainingSeconds ?? 0, [timer, now]);
+  const seconds = useMemo(
+    () =>
+      timer?.running && timer.endsAt !== null
+        ? Math.max(0, Math.ceil((timer.endsAt - now) / 1000))
+        : (timer?.remainingSeconds ?? 0),
+    [timer, now],
+  );
 
-  const updateData = async (change: (current: BootstrapData) => BootstrapData) => setData((current) => current ? change(current) : current);
+  const updateData = async (change: (current: BootstrapData) => BootstrapData) =>
+    setData((current) => (current ? change(current) : current));
   const handleTaskCreate = async (draft: Pick<Task, "title" | "note" | "estimatePomos" | "projectId">) => {
-    await api.createTask(draft); await loadData();
+    await api.createTask(draft);
+    await loadData();
   };
-  const handleTaskUpdate = async (id: string, patch: Partial<Task>) => { await api.updateTask(id, patch); await loadData(); };
-  const handleTaskDelete = async (id: string) => { await api.deleteTask(id); if (timer?.activeTaskId === id && timer) await persistTimer({ ...timer, activeTaskId: null }); await loadData(); };
+  const handleTaskUpdate = async (id: string, patch: Partial<Task>) => {
+    await api.updateTask(id, patch);
+    await loadData();
+  };
+  const handleTaskDelete = async (id: string) => {
+    await api.deleteTask(id);
+    if (timer?.activeTaskId === id && timer) await persistTimer({ ...timer, activeTaskId: null });
+    await loadData();
+  };
   const handleAction = async (action: TaskBulkAction) => {
     const updated = await api.taskAction(action);
     setData(updated);
@@ -260,12 +392,31 @@ export function App() {
       await persistTimer({ ...timer, activeTaskId: null });
     }
   };
-  const handleCreateProject = async (name: string, color: string | null = null) => { const project = await api.createProject(name, color); await loadData(); return project; };
-  const handleRenameProject = async (id: string, name: string) => { await api.renameProject(id, name); await loadData(); };
-  const handleUpdateProjectColor = async (id: string, color: string | null) => { await api.updateProject(id, { color }); await loadData(); };
-  const handleArchiveProject = async (id: string) => { await api.archiveProject(id); await loadData(); };
-  const handleRestoreProject = async (id: string) => { await api.restoreProject(id); await loadData(); };
-  const handleReorderTasks = async (order: string[]) => { const updated = await api.reorderTasks(order); setData((current) => current ? { ...current, tasks: updated.tasks } : current); };
+  const handleCreateProject = async (name: string, color: string | null = null) => {
+    const project = await api.createProject(name, color);
+    await loadData();
+    return project;
+  };
+  const handleRenameProject = async (id: string, name: string) => {
+    await api.renameProject(id, name);
+    await loadData();
+  };
+  const handleUpdateProjectColor = async (id: string, color: string | null) => {
+    await api.updateProject(id, { color });
+    await loadData();
+  };
+  const handleArchiveProject = async (id: string) => {
+    await api.archiveProject(id);
+    await loadData();
+  };
+  const handleRestoreProject = async (id: string) => {
+    await api.restoreProject(id);
+    await loadData();
+  };
+  const handleReorderTasks = async (order: string[]) => {
+    const updated = await api.reorderTasks(order);
+    setData((current) => (current ? { ...current, tasks: updated.tasks } : current));
+  };
 
   const selectMode = (mode: TimerMode) => {
     if (!timer || !data) return;
@@ -274,229 +425,303 @@ export function App() {
 
   const saveSettings = async (settings: Settings) => {
     const saved = await api.saveSettings(settings);
-    setData((current) => current ? { ...current, settings: saved } : current);
+    setData((current) => (current ? { ...current, settings: saved } : current));
     if (timer && !timer.running) await persistTimer({ ...timer, remainingSeconds: durationForMode(saved, timer.mode) });
   };
-  const setActiveTask = (id: string) => { if (timer) void persistTimer({ ...timer, activeTaskId: id }); };
+  const setActiveTask = (id: string) => {
+    if (timer) void persistTimer({ ...timer, activeTaskId: id });
+  };
 
-  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else void api.profiles().then(setProfiles).catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
-  if (profile && (!data || !timer)) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
+  if (loadingError)
+    return (
+      <main className="fatal-state">
+        <div>
+          <div className="fatal-mark">
+            <ArrowClockwise size={22} />
+          </div>
+          <h1>Foucusly</h1>
+          <p>Can't connect to the local timer service.</p>
+          <code>{loadingError}</code>
+          <button
+            className="button-dark"
+            onClick={() => {
+              setLoadingError("");
+              if (profile) void activateProfile(profile);
+              else
+                void api
+                  .profiles()
+                  .then(setProfiles)
+                  .catch((error: Error) => setLoadingError(error.message));
+            }}
+          >
+            Try again
+          </button>
+          <small>
+            Start both apps with <code>bun run dev</code>.
+          </small>
+        </div>
+      </main>
+    );
+  if (profile && (!data || !timer))
+    return (
+      <main className="loading-state">
+        <div className="loading-spinner" />
+        <span>Preparing your focus space…</span>
+      </main>
+    );
 
   const shownData = data ?? { tasks: [], projects: [], settings: DEFAULT_SETTINGS };
   const shownTimer = timer ?? freshTimer(DEFAULT_SETTINGS, "pomodoro", null, 0);
   const shellTheme = shownData.settings.themeColor ?? "red";
-  const darkRunning = Boolean(shownData.settings.darkModeWhenRunning && shownTimer.running);
+  const darkTheme = Boolean(
+    (shownData.settings.darkModeWhenRunning && shownTimer.running) || (shownData.settings.autoDarkAtNight && isNight),
+  );
 
-  return <div className={`app-shell theme-${shellTheme} ${darkRunning ? "dark-running" : ""}`}>
-    <div className="focus-area">
-      {darkRunning && <DarkStarfield />}
-      <CloudBackdrop dark={darkRunning} />
-      <div className="app-container">
-        <Header
-          profile={profile}
-          onAccount={() => {
-            setProfileCreateMode(false);
-            setProfileDialogOpen(true);
-          }}
-          onPremium={() => setPremiumDialogOpen(true)}
-          onLogout={handleLogout}
-          onShortcuts={() => setShortcutsDialogOpen(true)}
-          onDeleteAccount={() => setDeleteDialogOpen(true)}
-          onReport={() => setDialog("report")}
-          onSettings={() => setDialog("settings")}
-          onSignIn={() => {
-            setProfileCreateMode(profiles.length === 0);
-            setProfileDialogOpen(true);
-          }}
+  return (
+    <div className={`app-shell theme-${shellTheme} ${darkTheme ? "dark-running" : ""}`}>
+      <div className="focus-area">
+        {darkTheme && <DarkStarfield />}
+        <CloudBackdrop dark={darkTheme} />
+        <div className="app-container">
+          <Header
+            profile={profile}
+            onAccount={() => {
+              setProfileCreateMode(false);
+              setProfileDialogOpen(true);
+            }}
+            onPremium={() => setPremiumDialogOpen(true)}
+            onLogout={handleLogout}
+            onShortcuts={() => setShortcutsDialogOpen(true)}
+            onDeleteAccount={() => setDeleteDialogOpen(true)}
+            onReport={() => setDialog("report")}
+            onSettings={() => setDialog("settings")}
+            onSignIn={() => {
+              setProfileCreateMode(profiles.length === 0);
+              setProfileDialogOpen(true);
+            }}
+          />
+          <main className="focus-main">
+            <TimerPanel
+              mode={shownTimer.mode}
+              seconds={seconds}
+              running={shownTimer.running}
+              cyclePomos={shownTimer.cyclePomos}
+              taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title}
+              onMode={selectMode}
+              onToggle={toggleTimer}
+            />
+            <TasksPanel
+              tasks={shownData.tasks}
+              projects={shownData.projects}
+              activeTaskId={shownTimer.activeTaskId}
+              hourFormat={shownData.settings.hourFormat}
+              onCreate={handleTaskCreate}
+              onUpdate={handleTaskUpdate}
+              onDelete={handleTaskDelete}
+              onReorder={handleReorderTasks}
+              onAction={handleAction}
+              onSelect={setActiveTask}
+              onToast={notify}
+              onCreateProject={handleCreateProject}
+              onRenameProject={handleRenameProject}
+              onUpdateProjectColor={handleUpdateProjectColor}
+              onArchiveProject={handleArchiveProject}
+              onRestoreProject={handleRestoreProject}
+            />
+          </main>
+        </div>
+      </div>
+      {isSimplePage && (
+        <div className="app-bottom-link">
+          <a href="/">FULL PAGE</a>
+        </div>
+      )}
+      {dialog === "settings" && data && (
+        <SettingsDialog
+          initial={data.settings}
+          onSave={saveSettings}
+          onClose={() => setDialog(null)}
+          onToast={notify}
         />
-        <main className="focus-main">
-          <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} />
-          <TasksPanel tasks={shownData.tasks} projects={shownData.projects} activeTaskId={shownTimer.activeTaskId} hourFormat={shownData.settings.hourFormat} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onReorder={handleReorderTasks} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onUpdateProjectColor={handleUpdateProjectColor} onArchiveProject={handleArchiveProject} onRestoreProject={handleRestoreProject} />
-        </main>
-      </div>
-    </div>
-    {isSimplePage && <div className="app-bottom-link"><a href="/">FULL PAGE</a></div>}
-    {dialog === "settings" && data && <SettingsDialog initial={data.settings} onSave={saveSettings} onClose={() => setDialog(null)} onToast={notify} />}
-    {dialog === "report" && <ReportDialog onClose={() => setDialog(null)} />}
-    {(!profile || profileDialogOpen) && (
-      <ProfileGate
-        profiles={profiles}
-        activeProfileId={profile?.id ?? null}
-        initialCreating={profileCreateMode || profiles.length === 0}
-        onSelect={(selected) => {
-          setProfileDialogOpen(false);
-          setProfileCreateMode(false);
-          void activateProfile(selected);
-        }}
-        onCreate={createLocalProfile}
-        onClose={profile ? () => {
-          setProfileDialogOpen(false);
-          setProfileCreateMode(false);
-        } : undefined}
-      />
-    )}
-    {deleteDialogOpen && profile && (
-      <div
-        className="dialog-backdrop"
-        onMouseDown={(event) => {
-          if (!deleting && event.target === event.currentTarget) {
-            setDeleteDialogOpen(false);
+      )}
+      {dialog === "report" && <ReportDialog onClose={() => setDialog(null)} />}
+      {(!profile || profileDialogOpen) && (
+        <ProfileGate
+          profiles={profiles}
+          activeProfileId={profile?.id ?? null}
+          initialCreating={profileCreateMode || profiles.length === 0}
+          onSelect={(selected) => {
+            setProfileDialogOpen(false);
+            setProfileCreateMode(false);
+            void activateProfile(selected);
+          }}
+          onCreate={createLocalProfile}
+          onClose={
+            profile
+              ? () => {
+                  setProfileDialogOpen(false);
+                  setProfileCreateMode(false);
+                }
+              : undefined
           }
-        }}
-      >
-        <section
-          className="section-dialog delete-account-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-account-title"
+        />
+      )}
+      {deleteDialogOpen && profile && (
+        <div
+          className="dialog-backdrop"
+          onMouseDown={(event) => {
+            if (!deleting && event.target === event.currentTarget) {
+              setDeleteDialogOpen(false);
+            }
+          }}
         >
-          <header className="section-dialog-header">
-            <button
-              className="dialog-close"
-              aria-label="Close"
-              onClick={() => setDeleteDialogOpen(false)}
-              disabled={deleting}
-            >
-              <X size={20} />
-            </button>
-            <span className="section-dialog-icon delete-icon">
-              <Trash size={28} weight="duotone" />
-            </span>
-            <span className="dialog-eyebrow">DANGER ZONE</span>
-            <h2 id="delete-account-title">Delete Account</h2>
-            <p>
-              Are you sure you want to permanently delete account <strong>{profile.username}</strong>?
-              All your tasks, projects, sessions, and settings will be permanently removed.
-            </p>
-          </header>
-          <footer className="dialog-footer">
-            <button
-              type="button"
-              className="button-muted"
-              onClick={() => setDeleteDialogOpen(false)}
-              disabled={deleting}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="button-danger"
-              onClick={() => void handleDeleteAccount()}
-              disabled={deleting}
-            >
-              {deleting ? "Deleting…" : "Delete Account"}
-            </button>
-          </footer>
-        </section>
-      </div>
-    )}
-    {shortcutsDialogOpen && (
-      <div
-        className="dialog-backdrop"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setShortcutsDialogOpen(false);
-        }}
-      >
-        <section
-          className="section-dialog shortcuts-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="shortcuts-dialog-title"
+          <section
+            className="section-dialog delete-account-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-account-title"
+          >
+            <header className="section-dialog-header">
+              <button
+                className="dialog-close"
+                aria-label="Close"
+                onClick={() => setDeleteDialogOpen(false)}
+                disabled={deleting}
+              >
+                <X size={20} />
+              </button>
+              <span className="section-dialog-icon delete-icon">
+                <Trash size={28} weight="duotone" />
+              </span>
+              <span className="dialog-eyebrow">DANGER ZONE</span>
+              <h2 id="delete-account-title">Delete Account</h2>
+              <p>
+                Are you sure you want to permanently delete account <strong>{profile.username}</strong>? All your tasks,
+                projects, sessions, and settings will be permanently removed.
+              </p>
+            </header>
+            <footer className="dialog-footer">
+              <button
+                type="button"
+                className="button-muted"
+                onClick={() => setDeleteDialogOpen(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button-danger"
+                onClick={() => void handleDeleteAccount()}
+                disabled={deleting}
+              >
+                {deleting ? "Deleting…" : "Delete Account"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {shortcutsDialogOpen && (
+        <div
+          className="dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShortcutsDialogOpen(false);
+          }}
         >
-          <header className="section-dialog-header">
-            <button
-              className="dialog-close"
-              aria-label="Close"
-              onClick={() => setShortcutsDialogOpen(false)}
-            >
-              <X size={20} />
-            </button>
-            <span className="section-dialog-icon">
-              <Keyboard size={28} weight="duotone" />
-            </span>
-            <span className="dialog-eyebrow">QUICK ACCESS</span>
-            <h2 id="shortcuts-dialog-title">Keyboard Shortcuts</h2>
-            <p>Speed up your productivity with keyboard controls.</p>
-          </header>
-          <div className="shortcuts-content">
-            <div className="shortcut-row">
-              <span>Start or pause timer</span>
-              <kbd>Space</kbd>
+          <section
+            className="section-dialog shortcuts-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shortcuts-dialog-title"
+          >
+            <header className="section-dialog-header">
+              <button className="dialog-close" aria-label="Close" onClick={() => setShortcutsDialogOpen(false)}>
+                <X size={20} />
+              </button>
+              <span className="section-dialog-icon">
+                <Keyboard size={28} weight="duotone" />
+              </span>
+              <span className="dialog-eyebrow">QUICK ACCESS</span>
+              <h2 id="shortcuts-dialog-title">Keyboard Shortcuts</h2>
+              <p>Speed up your productivity with keyboard controls.</p>
+            </header>
+            <div className="shortcuts-content">
+              <div className="shortcut-row">
+                <span>Start or pause timer</span>
+                <kbd>Space</kbd>
+              </div>
+              <div className="shortcut-row">
+                <span>Add a new task</span>
+                <kbd>T</kbd>
+              </div>
+              <div className="shortcut-row">
+                <span>Close open dialog</span>
+                <kbd>Esc</kbd>
+              </div>
             </div>
-            <div className="shortcut-row">
-              <span>Add a new task</span>
-              <kbd>T</kbd>
-            </div>
-            <div className="shortcut-row">
-              <span>Close open dialog</span>
-              <kbd>Esc</kbd>
-            </div>
-          </div>
-          <footer className="dialog-footer">
-            <button
-              type="button"
-              className="button-dark"
-              onClick={() => setShortcutsDialogOpen(false)}
-            >
-              Got it
-            </button>
-          </footer>
-        </section>
-      </div>
-    )}
-    {premiumDialogOpen && (
-      <div
-        className="dialog-backdrop"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setPremiumDialogOpen(false);
-        }}
-      >
-        <section
-          className="section-dialog premium-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="premium-dialog-title"
+            <footer className="dialog-footer">
+              <button type="button" className="button-dark" onClick={() => setShortcutsDialogOpen(false)}>
+                Got it
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {premiumDialogOpen && (
+        <div
+          className="dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPremiumDialogOpen(false);
+          }}
         >
-          <header className="section-dialog-header">
-            <button
-              className="dialog-close"
-              aria-label="Close"
-              onClick={() => setPremiumDialogOpen(false)}
-            >
-              <X size={20} />
-            </button>
-            <span className="section-dialog-icon premium-icon">
-              <Crown size={28} weight="duotone" />
-            </span>
-            <span className="dialog-eyebrow">UPGRADE</span>
-            <h2 id="premium-dialog-title">Foucusly Premium</h2>
-            <p>Supercharge your daily focus sessions with pro features.</p>
-          </header>
-          <div className="premium-content">
-            <ul className="premium-features-list">
-              <li>
-                <strong>Webhook Automations:</strong> Sync completed focus sessions with Discord, Slack, and Notion automatically.
-              </li>
-              <li>
-                <strong>Ambient Audio Library:</strong> High-definition binaural beats and cafe/nature soundscapes.
-              </li>
-              <li>
-                <strong>Deep Ranking & Analytics:</strong> Export full CSV reports with detailed project timeline insights.
-              </li>
-            </ul>
-          </div>
-          <footer className="dialog-footer">
-            <button
-              type="button"
-              className="button-dark"
-              onClick={() => setPremiumDialogOpen(false)}
-            >
-              Close
-            </button>
-          </footer>
-        </section>
-      </div>
-    )}
-    {toast && <div className="toast-message" role="status">{toast}<button aria-label="Dismiss notification" onClick={() => setToast("")}><X size={16} /></button></div>}
-  </div>;
+          <section
+            className="section-dialog premium-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="premium-dialog-title"
+          >
+            <header className="section-dialog-header">
+              <button className="dialog-close" aria-label="Close" onClick={() => setPremiumDialogOpen(false)}>
+                <X size={20} />
+              </button>
+              <span className="section-dialog-icon premium-icon">
+                <Crown size={28} weight="duotone" />
+              </span>
+              <span className="dialog-eyebrow">UPGRADE</span>
+              <h2 id="premium-dialog-title">Foucusly Premium</h2>
+              <p>Supercharge your daily focus sessions with pro features.</p>
+            </header>
+            <div className="premium-content">
+              <ul className="premium-features-list">
+                <li>
+                  <strong>Webhook Automations:</strong> Sync completed focus sessions with Discord, Slack, and Notion
+                  automatically.
+                </li>
+                <li>
+                  <strong>Ambient Audio Library:</strong> High-definition binaural beats and cafe/nature soundscapes.
+                </li>
+                <li>
+                  <strong>Deep Ranking & Analytics:</strong> Export full CSV reports with detailed project timeline
+                  insights.
+                </li>
+              </ul>
+            </div>
+            <footer className="dialog-footer">
+              <button type="button" className="button-dark" onClick={() => setPremiumDialogOpen(false)}>
+                Close
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {toast && (
+        <div className="toast-message" role="status">
+          {toast}
+          <button aria-label="Dismiss notification" onClick={() => setToast("")}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }

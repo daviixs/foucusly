@@ -17,7 +17,7 @@ export function ProfileGate({
   onSelect,
   onCreate,
   onClose,
-  initialCreating = false
+  initialCreating = false,
 }: Props) {
   const [creating, setCreating] = useState(initialCreating || profiles.length === 0);
   const [username, setUsername] = useState("");
@@ -73,11 +73,7 @@ export function ProfileGate({
       >
         <header className="section-dialog-header">
           {onClose && (
-            <button
-              className="dialog-close"
-              aria-label="Close"
-              onClick={onClose}
-            >
+            <button className="dialog-close" aria-label="Close" onClick={onClose}>
               <X size={20} />
             </button>
           )}
@@ -85,9 +81,7 @@ export function ProfileGate({
             <UserCircle size={28} weight="duotone" />
           </span>
           <span className="dialog-eyebrow">ACCOUNT</span>
-          <h2 id="profile-title">
-            {creating ? "Create account" : "Who is focusing?"}
-          </h2>
+          <h2 id="profile-title">{creating ? "Create account" : "Who is focusing?"}</h2>
           <p id="profile-description">
             {creating
               ? "Choose a username to save your focus space and progress on this device."
@@ -134,21 +128,12 @@ export function ProfileGate({
                     Back to profiles
                   </button>
                 ) : onClose ? (
-                  <button
-                    type="button"
-                    className="button-muted"
-                    onClick={onClose}
-                    disabled={busy}
-                  >
+                  <button type="button" className="button-muted" onClick={onClose} disabled={busy}>
                     Cancel
                   </button>
                 ) : null}
 
-                <button
-                  className="button-dark"
-                  type="submit"
-                  disabled={busy || username.trim().length < 2}
-                >
+                <button className="button-dark" type="submit" disabled={busy || username.trim().length < 2}>
                   {busy ? "Creating…" : "Create account"}
                 </button>
               </footer>
@@ -170,11 +155,7 @@ export function ProfileGate({
                       </span>
                       <span className="profile-option-name">{item.username}</span>
                       {isActive ? (
-                        <CheckCircle
-                          size={18}
-                          weight="fill"
-                          className="profile-check-active"
-                        />
+                        <CheckCircle size={18} weight="fill" className="profile-check-active" />
                       ) : (
                         <span className="profile-select-hint">Select</span>
                       )}
@@ -185,11 +166,7 @@ export function ProfileGate({
 
               <footer className="dialog-footer">
                 {onClose && (
-                  <button
-                    type="button"
-                    className="button-muted"
-                    onClick={onClose}
-                  >
+                  <button type="button" className="button-muted" onClick={onClose}>
                     Cancel
                   </button>
                 )}

@@ -106,14 +106,14 @@ Before handing off a change, run `bun run typecheck`. Run `bun run build` for ch
 
 ## Environment and deployment
 
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `PORT` | HTTP port for the Fastify API | `3001` |
-| `HOST` | API bind host | `127.0.0.1` |
-| `DATABASE_PATH` | SQLite database file path | `data/foucusly.sqlite` |
-| `CORS_ORIGINS` | Comma-separated allowed origins; CORS is not registered when empty | unset |
-| `TRUST_PROXY` | Enable Fastify proxy trust when exactly `true`, or use a supplied proxy setting | unset |
-| `PUSH_POLL_INTERVAL_MS` | Push reminder scheduler interval | `15000` |
+| Variable                | Purpose                                                                         | Default                |
+| ----------------------- | ------------------------------------------------------------------------------- | ---------------------- |
+| `PORT`                  | HTTP port for the Fastify API                                                   | `3001`                 |
+| `HOST`                  | API bind host                                                                   | `127.0.0.1`            |
+| `DATABASE_PATH`         | SQLite database file path                                                       | `data/foucusly.sqlite` |
+| `CORS_ORIGINS`          | Comma-separated allowed origins; CORS is not registered when empty              | unset                  |
+| `TRUST_PROXY`           | Enable Fastify proxy trust when exactly `true`, or use a supplied proxy setting | unset                  |
+| `PUSH_POLL_INTERVAL_MS` | Push reminder scheduler interval                                                | `15000`                |
 
 For production, build all workspaces, run the API, serve `apps/web/dist` from a static server, and proxy `/api` to the API process. Back up the SQLite database as application data; it contains all local profiles, timers, sessions, and push configuration.
 

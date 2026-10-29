@@ -25,7 +25,6 @@ Foucusly é um aplicativo de foco baseado na técnica Pomodoro. Ele reúne o cic
 
 O app foi pensado para funcionar localmente. Seus perfis, tarefas, projetos, configurações, estado do timer e histórico de sessões ficam em uma base SQLite controlada pela sua instalação — sem depender de login ou de um serviço externo para começar.
 
-> **Perfis não são autenticação.** Eles separam dados locais no mesmo app; autenticação de contas faz parte do roadmap.
 
 ## Como funciona
 
@@ -44,8 +43,6 @@ Consulte relatórios, sequência e rankings
 ```
 
 Cada perfil pode configurar a duração do Pomodoro, das pausas curtas e longas, o intervalo da pausa longa, início automático, sons, tema, ordem das tarefas e comportamento de conclusão automática.
-
-Quando uma sessão de foco termina, o Foucusly registra um histórico idempotente, atualiza o progresso da tarefa relacionada e, se configurado, a conclui ou move para o fim da lista. Os relatórios usam essas sessões concluídas como fonte de verdade.
 
 ## Recursos atuais
 
@@ -116,14 +113,14 @@ DATABASE_PATH=/caminho/para/foucusly.sqlite bun run dev:api
 
 ## Comandos
 
-| Comando | Descrição |
-| --- | --- |
-| `bun run dev` | Inicia API e frontend em modo de desenvolvimento. |
-| `bun run dev:api` | Inicia somente a API Fastify com recarregamento. |
-| `bun run dev:web` | Inicia somente o Vite. |
-| `bun run typecheck` | Verifica os tipos de todos os workspaces. |
-| `bun run build` | Compila contratos, API e frontend. |
-| `bun run start` | Inicia a API compilada. |
+| Comando             | Descrição                                         |
+| ------------------- | ------------------------------------------------- |
+| `bun run dev`       | Inicia API e frontend em modo de desenvolvimento. |
+| `bun run dev:api`   | Inicia somente a API Fastify com recarregamento.  |
+| `bun run dev:web`   | Inicia somente o Vite.                            |
+| `bun run typecheck` | Verifica os tipos de todos os workspaces.         |
+| `bun run build`     | Compila contratos, API e frontend.                |
+| `bun run start`     | Inicia a API compilada.                           |
 
 ## Produção
 
@@ -143,12 +140,4 @@ O Foucusly já é útil como aplicação local. As próximas evoluções devem p
 - [ ] **Sincronização entre dispositivos** — manter timer, tarefas e histórico consistentes em mais de um dispositivo.
 - [ ] **Webhooks** — emitir eventos de sessão iniciada, concluída e tarefa finalizada para automações externas.
 - [ ] **Integrações** — conectar projetos e tarefas a ferramentas como calendário, Notion, Todoist ou Slack.
-- [ ] **Exportação e backup guiado** — exportar sessões, relatórios e dados do usuário de forma simples.
-- [ ] **PWA/offline aprimorado** — instalação no dispositivo e uma experiência resiliente sem conexão.
-- [ ] **Relatórios avançados** — metas, tendências, comparações de períodos e insights de hábitos.
-
-## Princípios
-
-> **Foco sem atrito. Dados sob seu controle. Métricas que representam trabalho real.**
-
-Foucusly não tenta ser uma plataforma de produtividade inchada. A ideia é manter o ciclo essencial — decidir, focar, pausar e aprender com o histórico — rápido e confiável.
+- [ ] **Exportação e backup guiado** — exportar sessões, relatórios e dados do usuário de forma simples, com CSV.

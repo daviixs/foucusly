@@ -22,10 +22,10 @@ Pull Request → verificação → merge em main → GHCR
 
 ## Arquitetura de runtime
 
-| Recurso Coolify | Imagem GHCR | Porta | Domínio | Health check |
-| --- | --- | --- | --- | --- |
-| API | `ghcr.io/<owner>/foucusly-api:sha-<commit>` | `3001` | `api.seudominio.js.org` | `/api/health` |
-| Web | `ghcr.io/<owner>/foucusly-web:sha-<commit>` | `80` | `app.seudominio.js.org` | `/health` |
+| Recurso Coolify | Imagem GHCR                                 | Porta  | Domínio                 | Health check  |
+| --------------- | ------------------------------------------- | ------ | ----------------------- | ------------- |
+| API             | `ghcr.io/<owner>/foucusly-api:sha-<commit>` | `3001` | `api.seudominio.js.org` | `/api/health` |
+| Web             | `ghcr.io/<owner>/foucusly-web:sha-<commit>` | `80`   | `app.seudominio.js.org` | `/health`     |
 
 A API deve receber estas variáveis no Coolify:
 
@@ -81,14 +81,14 @@ O Coolify expõe tanto a atualização de `docker_registry_image_tag` quanto o r
 
 Crie o environment GitHub `production` para os secrets de deploy e registre as URLs como variables no nível do repositório (elas também são necessárias durante o build da imagem web):
 
-| Tipo | Nome | Valor |
-| --- | --- | --- |
-| Secret no environment `production` | `COOLIFY_API_URL` | URL do painel Coolify, sem `/api/v1` |
-| Secret no environment `production` | `COOLIFY_TOKEN` | Token limitado à API/deploy das aplicações |
-| Secret no environment `production` | `COOLIFY_API_UUID` | UUID do recurso da API |
-| Secret no environment `production` | `COOLIFY_WEB_UUID` | UUID do recurso web |
-| Variable do repositório | `PUBLIC_API_URL` | Ex.: `https://api.seudominio.js.org` |
-| Variable do repositório | `PUBLIC_WEB_URL` | Ex.: `https://app.seudominio.js.org` |
+| Tipo                               | Nome               | Valor                                      |
+| ---------------------------------- | ------------------ | ------------------------------------------ |
+| Secret no environment `production` | `COOLIFY_API_URL`  | URL do painel Coolify, sem `/api/v1`       |
+| Secret no environment `production` | `COOLIFY_TOKEN`    | Token limitado à API/deploy das aplicações |
+| Secret no environment `production` | `COOLIFY_API_UUID` | UUID do recurso da API                     |
+| Secret no environment `production` | `COOLIFY_WEB_UUID` | UUID do recurso web                        |
+| Variable do repositório            | `PUBLIC_API_URL`   | Ex.: `https://api.seudominio.js.org`       |
+| Variable do repositório            | `PUBLIC_WEB_URL`   | Ex.: `https://app.seudominio.js.org`       |
 
 O `GITHUB_TOKEN` publica no GHCR automaticamente. Em Settings → Actions, permita leitura e escrita de workflows para que a tag `production` possa ser atualizada. Proteja `main`: PR obrigatório, checks `Verify` obrigatórios, sem force push e sem secrets de produção em workflows de PR.
 
