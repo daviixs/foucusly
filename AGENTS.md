@@ -14,6 +14,7 @@ Core product behavior:
 - Projects can be archived instead of deleted. Archiving detaches its active tasks, while historical sessions retain their recorded project relationship for reporting.
 - Reports summarize focus sessions by day, week, month, or year and expose session detail and project/task rankings.
 - Web Push can notify subscribed browsers when a running timer is due. The application remains usable without push configuration.
+- Outbound webhooks are optional profile settings, not a premium gate. When enabled, the API POSTs `session.finished` and `task.completed` to one URL. A delivery failure must not roll back the session or task write.
 
 The detailed system map is in [architecture.md](architecture.md).
 
@@ -35,8 +36,8 @@ apps/
 │   └── src/
 │       ├── db.ts                database creation, schema evolution, and data helpers
 │       ├── server.ts            server configuration and core routes
-│       ├── routes/              profile, project, report, task, session routes
-│       ├── services/            report-query business logic
+│       ├── routes/              profile, project, report, task, session, webhook routes
+│       ├── services/            reporting and outbound webhooks
 │       └── push/                VAPID, subscriptions, payloads, and reminder scheduler
 └── web/                         React single-page application
     └── src/
