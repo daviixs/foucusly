@@ -541,7 +541,7 @@ export function App() {
           <div className="premium-content">
             <ul className="premium-features-list">
               <li>
-                <strong>Webhook Automations:</strong> Sync completed focus sessions with Discord, Slack, and Notion automatically.
+                <strong>Connected workflows:</strong> Outbound webhooks are included in Settings. Discord, Slack, and Notion presets may come later.
               </li>
               <li>
                 <strong>Ambient Audio Library:</strong> High-definition binaural beats and cafe/nature soundscapes.

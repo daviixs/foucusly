@@ -1,4 +1,4 @@
-import type { BootstrapData, DetailedSession, Profile, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskBulkAction, TimerState } from "@foucusly/contracts";
+import type { BootstrapData, DetailedSession, Profile, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskBulkAction, TimerState, WebhookTestResult } from "@foucusly/contracts";
 
 let activeProfileId = "";
 const apiOrigin = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
@@ -43,6 +43,7 @@ export const api = {
   subscribePush: (subscription: string) => request<{ endpoint: string }>("/push/subscribe", { method: "POST", body: JSON.stringify({ subscription }) }),
   unsubscribePush: (endpoint: string) => request<void>("/push/subscribe", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
   testPush: () => request<{ ok: boolean; delivered: number; total: number }>("/push/test", { method: "POST" }),
+  testWebhook: (input: { webhookUrl?: string; webhookSecret?: string; webhookToken?: string } = {}) => request<WebhookTestResult>("/webhooks/test", { method: "POST", body: JSON.stringify(input) }),
   completeSession: (session: { id: string; mode: TimerState["mode"]; startedAt: string; endedAt: string; durationSeconds: number; taskId: string | null; taskTitle: string | null; projectId: string | null }) => request<{ saved: true; duplicate: boolean }>("/sessions", { method: "POST", body: JSON.stringify(session) }),
   report: (period: ReportPeriod, date: string) => request<ReportData>(`/reports?period=${period}&date=${date}`),
   reportDetail: (period: ReportPeriod, date: string) => request<{ sessions: DetailedSession[] }>(`/reports/detail?period=${period}&date=${date}`),
