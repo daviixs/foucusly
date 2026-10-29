@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { webhookSessionType } from "@foucusly/contracts";
 import type { AppDatabase } from "../db.js";
 import { readSettings } from "../db.js";
+import { focusRoundFor, lookupProjectName, scheduleProfileWebhooks, type OutboundWebhook } from "../services/webhooks.js";
 
 interface SessionRoutesOptions { db: AppDatabase; }
 
@@ -43,18 +45,51 @@ export const sessionRoutes: FastifyPluginAsync<SessionRoutesOptions> = async (ap
     const taskTitle = input.taskTitle === undefined ? task?.title ?? null : input.taskTitle;
     const insert = db.prepare("INSERT OR IGNORE INTO sessions (id,mode,started_at,ended_at,duration_seconds,task_id,task_title,project_id,profile_id) VALUES (?,?,?,?,?,?,?,?,?)")
       .run(input.id, input.mode, input.startedAt, input.endedAt, input.durationSeconds, input.taskId ?? null, taskTitle, projectId, owner);
-    if (insert.changes && input.mode === "pomodoro" && input.taskId) {
-      const settings = readSettings(db, owner);
-      const task = db.prepare("SELECT completed_pomos, estimate_pomos FROM tasks WHERE id=? AND profile_id=?").get(input.taskId, owner) as { completed_pomos: number; estimate_pomos: number } | undefined;
-      if (task) {
-        const completedPomos = task.completed_pomos + 1;
-        db.prepare("UPDATE tasks SET completed_pomos=?, completed=? WHERE id=? AND profile_id=?")
-          .run(completedPomos, Number(settings.autoCheckTasks && completedPomos >= task.estimate_pomos), input.taskId, owner);
-        if (settings.checkToBottom && completedPomos >= task.estimate_pomos) {
-          const max = (db.prepare("SELECT COALESCE(MAX(sort_order),0)+1 AS next FROM tasks WHERE profile_id=?").get(owner) as { next: number }).next;
-          db.prepare("UPDATE tasks SET sort_order=? WHERE id=? AND profile_id=?").run(max, input.taskId, owner);
+    if (insert.changes) {
+      const deliveries: OutboundWebhook[] = [];
+      if (input.mode === "pomodoro" && input.taskId) {
+        const settings = readSettings(db, owner);
+        const taskRow = db.prepare("SELECT title, completed_pomos, estimate_pomos, completed, project_id FROM tasks WHERE id=? AND profile_id=?").get(input.taskId, owner) as { title: string; completed_pomos: number; estimate_pomos: number; completed: number; project_id: string | null } | undefined;
+        if (taskRow) {
+          const completedPomos = taskRow.completed_pomos + 1;
+          const nowCompleted = settings.autoCheckTasks && completedPomos >= taskRow.estimate_pomos;
+          db.prepare("UPDATE tasks SET completed_pomos=?, completed=? WHERE id=? AND profile_id=?")
+            .run(completedPomos, Number(nowCompleted), input.taskId, owner);
+          if (settings.checkToBottom && completedPomos >= taskRow.estimate_pomos) {
+            const max = (db.prepare("SELECT COALESCE(MAX(sort_order),0)+1 AS next FROM tasks WHERE profile_id=?").get(owner) as { next: number }).next;
+            db.prepare("UPDATE tasks SET sort_order=? WHERE id=? AND profile_id=?").run(max, input.taskId, owner);
+          }
+          if (!taskRow.completed && nowCompleted) {
+            deliveries.push({
+              event: "task.completed",
+              data: {
+                task_id: input.taskId,
+                task_title: taskRow.title,
+                project_id: taskRow.project_id,
+                project_name: lookupProjectName(db, owner, taskRow.project_id),
+                estimated_pomos: taskRow.estimate_pomos,
+                completed_pomos: completedPomos
+              }
+            });
+          }
         }
       }
+      deliveries.unshift({
+        event: "session.finished",
+        data: {
+          type: webhookSessionType(input.mode),
+          round: focusRoundFor(db, owner, input.endedAt),
+          task: taskTitle,
+          project: lookupProjectName(db, owner, projectId),
+          session_start: input.startedAt,
+          session_end: input.endedAt,
+          seconds: input.durationSeconds,
+          session_id: input.id,
+          task_id: input.taskId ?? null,
+          project_id: projectId
+        }
+      });
+      scheduleProfileWebhooks(db, owner, deliveries);
     }
     reply.code(insert.changes ? 201 : 200);
     return { saved: true, duplicate: !insert.changes };

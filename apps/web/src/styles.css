@@ -151,3 +151,14 @@
 .session-detail-actions button{border:0;background:none;color:#bbb;display:grid;place-items:center;padding:4px}
 .session-detail-actions button:hover{color:#777}
 @media(max-width:600px){.manual-grid{grid-template-columns:1fr 1fr}.report-detail b{max-width:170px}}
+
+.webhook-form{display:grid;gap:12px}
+.webhook-field{display:flex;flex-direction:column;gap:6px;color:#888;font-size:11px}
+.webhook-field input{height:32px;padding:0 8px;border:1px solid #ddd;border-radius:3px;background:#fff;color:#555;font-size:12px}
+.webhook-events{margin:0;padding:0;border:0;display:grid;gap:8px}
+.webhook-events legend{padding:0;color:#888;font-size:11px}
+.webhook-check{display:flex;align-items:center;gap:8px;color:#666;font-size:13px}
+.webhook-actions{display:flex;gap:8px;flex-wrap:wrap}
+.webhook-actions .device-button{padding:0 12px}
+.webhook-error{margin:0;color:#9f4040;font-size:12px}
+.section-dialog .webhook-field input,.section-dialog .webhook-actions .device-button{border-color:rgba(95,128,145,.24);border-radius:7px;background:rgba(255,255,255,.5)}

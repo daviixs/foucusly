@@ -3,7 +3,7 @@ import type { Database as DatabaseType } from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { DEFAULT_SETTINGS, durationForMode, type BootstrapData, type Profile, type Project, type Settings, type TimerState } from "@foucusly/contracts";
+import { DEFAULT_SETTINGS, durationForMode, normalizeSettings, type BootstrapData, type Profile, type Project, type Settings, type TimerState } from "@foucusly/contracts";
 
 const defaultTimer = (settings: Settings): TimerState => ({
   mode: "pomodoro",
@@ -160,9 +160,7 @@ export function deleteProfile(db: AppDatabase, profileId: string): void {
 
 export function readSettings(db: AppDatabase, profileId: string): Settings {
   const row = db.prepare("SELECT value FROM settings WHERE profile_id = ?").get(profileId) as { value: string };
-  // tasksVisible belonged to the removed "Hide tasks" option; drop it so stored settings cannot hide tasks.
-  const { tasksVisible: _removed, ...stored } = JSON.parse(row.value) as Partial<Settings> & { tasksVisible?: boolean };
-  return { ...DEFAULT_SETTINGS, ...stored };
+  return normalizeSettings(JSON.parse(row.value) as Partial<Settings> & { tasksVisible?: boolean });
 }
 
 export function writeSettings(db: AppDatabase, profileId: string, settings: Settings) {

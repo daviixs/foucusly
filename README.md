@@ -13,7 +13,7 @@ Um sistema local-first de foco para transformar ciclos Pomodoro em trabalho conc
 [![Fastify](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-local--first-003B57?logo=sqlite&logoColor=white)](https://sqlite.org/)
 
-`Pomodoro` · `tarefas` · `projetos` · `relatórios` · `notificações`
+`Pomodoro` · `tarefas` · `projetos` · `relatórios` · `notificações` · `webhooks`
 
 </div>
 
@@ -56,6 +56,7 @@ Quando uma sessão de foco termina, o Foucusly registra um histórico idempotent
 - Relatórios diários, semanais, mensais e anuais, com detalhes de sessão e rankings por projeto ou tarefa.
 - Sons de alarme e ambiente, preferências visuais e modo escuro durante uma sessão.
 - Notificações Web Push quando um timer termina e um lembrete opcional minutos antes do fim, em navegadores e ambientes compatíveis.
+- Webhooks de saída opcionais para sessão concluída e tarefa concluída, com ping de teste.
 - Interface responsiva, incluindo a rota simplificada `/app`.
 
 ## Arquitetura
@@ -134,13 +135,36 @@ DATABASE_PATH=/caminho/para/foucusly.sqlite bun run dev:api
 
 As variáveis de ambiente mais relevantes são `PORT`, `HOST`, `DATABASE_PATH`, `CORS_ORIGINS`, `TRUST_PROXY` e `PUSH_POLL_INTERVAL_MS`. As chaves VAPID para Web Push podem ser configuradas ou persistidas localmente pela API.
 
+## Webhooks
+
+Webhooks de saída fazem parte do app, sem paywall. Em **Settings → Integration**, cole uma URL, ative o envio, escolha os eventos e salve com **OK**. Uma URL vazia deixa o recurso desligado.
+
+O Foucusly faz `POST` de um JSON versão 1, com timeout de 4 segundos e uma nova tentativa se a resposta for 5xx ou se o tempo estourar. Falha de entrega não desfaz a sessão nem a tarefa. O último erro fica em `webhookLastError` nas configurações do perfil. O `session_id` permite ao receptor ignorar uma segunda tentativa do mesmo evento.
+
+HTTPS é obrigatório. `http://localhost` e `http://127.0.0.1` (e o bloco de loopback) valem só para teste local. Endereços privados, link-local e respostas DNS que apontem para eles são recusados. Redirecionamentos não são seguidos.
+
+Se o segredo estiver preenchido, cada requisição inclui `X-Foucusly-Signature: sha256=<hex>`, o HMAC-SHA256 do corpo bruto em UTF-8. Sem segredo, o cabeçalho não vai. Não há header `Authorization: Bearer`.
+
+Eventos ao vivo: `session.finished` (somente insert novo em `POST /api/sessions`; repetir o mesmo id não dispara) e `task.completed` (quando a tarefa passa a concluída, no check automático ou no patch manual). O botão **Test** envia `ping` e mostra o resultado, mesmo antes de ativar os eventos.
+
+Corpo: `{ event, timestamp, profileId, data }`. `session.finished` traz (estilo Pomofocus) `type` (`focus`/`short-break`/`long-break`), `round`, `task`, `project`, `session_start`, `session_end`, `seconds`, além de `session_id`, `task_id` e `project_id`. Com token configurado é enviado `Authorization: Bearer <token>`. `task.completed` traz `task_id`, `task_title`, `project_id`, `project_name`, `estimated_pomos` e `completed_pomos`.
+
+### Zapier Catch Hook
+
+1. No Zapier, crie um Zap com **Webhooks by Zapier → Catch Hook** e copie a URL.
+2. No Foucusly, cole a URL em **Webhook URL**, marque **Session finished** e/ou **Task completed**, ligue **Enabled** e clique em **OK**.
+3. Clique em **Test**. No Zapier, use **Test trigger** para ver o `ping`.
+4. Mapeie `event`, `data.task`, `data.seconds` e `data.project` nos passos seguintes.
+
+O Catch Hook não valida o HMAC. Deixe o segredo vazio, a menos que o destino saiba conferir `X-Foucusly-Signature`.
+
 ## Roadmap
 
 O Foucusly já é útil como aplicação local. As próximas evoluções devem preservar essa simplicidade enquanto abrem portas para fluxos conectados:
 
 - [ ] **Autenticação e contas** — login seguro, sessões e separação entre identidade e perfis locais.
 - [ ] **Sincronização entre dispositivos** — manter timer, tarefas e histórico consistentes em mais de um dispositivo.
-- [ ] **Webhooks** — emitir eventos de sessão iniciada, concluída e tarefa finalizada para automações externas.
+- [x] **Webhooks de saída** — `session.finished` e `task.completed` para uma URL do perfil, com ping de teste. Sessão iniciada, pausa, fila de entregas e vários destinos ficam para depois.
 - [ ] **Integrações** — conectar projetos e tarefas a ferramentas como calendário, Notion, Todoist ou Slack.
 - [ ] **Exportação e backup guiado** — exportar sessões, relatórios e dados do usuário de forma simples.
 - [ ] **PWA/offline aprimorado** — instalação no dispositivo e uma experiência resiliente sem conexão.
