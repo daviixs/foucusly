@@ -57,7 +57,7 @@ describe("archived project listing, restore and visual attributes", () => {
     await send("DELETE", `/api/projects/${project.id}`);
     const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": owner } })).json()) as { tasks: Array<{ projectId: string | null }> };
     expect(bootstrap.tasks.find((row) => row.id === task.id)?.projectId).toBeNull();
-    const detail = await app.inject({ method: "GET", url: "/api/reports/detail?period=week&date=" + new Date().toISOString().slice(0, 10), headers: { "x-profile-id": owner } });
+    const detail = await app.inject({ method: "GET", url: "/api/reports/detail?period=week", headers: { "x-profile-id": owner } });
     const sessions = (detail.json() as { sessions: Array<{ projectId: string | null }> }).sessions;
     expect(sessions[0]?.projectId).toBe(project.id);
   });

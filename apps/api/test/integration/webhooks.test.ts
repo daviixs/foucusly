@@ -136,7 +136,7 @@ describe("outbound webhooks", () => {
     const response = await send("POST", "/api/sessions", { id: UUID("55555555"), mode: "pomodoro", startedAt: iso(60), endedAt: iso(0), durationSeconds: 60 });
     expect(response.statusCode).toBe(201);
     await vi.waitFor(() => expect(readSettings(db, owner).webhookLastError).toBe("Webhook request failed"));
-    const detail = await send("GET", "/api/reports/detail?period=day&date=" + iso(0).slice(0, 10));
+    const detail = await send("GET", "/api/reports/detail?period=day");
     expect((detail.json() as { sessions: unknown[] }).sessions).toHaveLength(1);
   });
 
