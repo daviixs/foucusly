@@ -124,22 +124,42 @@ jobs:
           # Usage: coolify-deploy.sh <commit-sha>
           set -euo pipefail
           sha="$1"
-          api="${COOLIFY_API_URL%/}/api/v1"
-          auth=(--header "Authorization: Bearer $COOLIFY_TOKEN")
+          : "${COOLIFY_API_URL:?COOLIFY_API_URL is empty}" "${COOLIFY_TOKEN:?COOLIFY_TOKEN is empty}" "${COOLIFY_API_UUID:?COOLIFY_API_UUID is empty}"
+          base="$(printf '%s' "$COOLIFY_API_URL" | tr -d '[:space:]')"
+          while [[ "$base" == */ ]]; do base="${base%/}"; done
+          base="${base%/api/v1}"; base="${base%/api}"
+          while [[ "$base" == */ ]]; do base="${base%/}"; done
+          api="$base/api/v1"
+          echo "Coolify API base: $api"
 
-          curl --fail-with-body --silent --show-error "${auth[@]}" \
-            --request PATCH "$api/applications/$COOLIFY_API_UUID" \
+          # coolify METHOD PATH [curl args...] -> prints body; on HTTP error prints method, path, status, body.
+          coolify() {
+            local method="$1" path="$2"; shift 2
+            local out code
+            out="$(mktemp)"
+            code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}' \
+              --request "$method" --header "Authorization: Bearer $COOLIFY_TOKEN" \
+              --header "Accept: application/json" "$@" "$api$path")" || { echo "curl failed: $method $path" >&2; cat "$out" >&2; rm -f "$out"; return 1; }
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "Coolify API error: $method /api/v1$path -> HTTP $code" >&2
+              cat "$out" >&2; echo >&2
+              rm -f "$out"; return 1
+            fi
+            cat "$out"; rm -f "$out"
+          }
+
+          coolify PATCH "/applications/$COOLIFY_API_UUID" \
             --header "Content-Type: application/json" \
             --data "{\"git_commit_sha\":\"$sha\"}" >/dev/null
+          echo "Set git_commit_sha=$sha"
 
-          response="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
-            "$api/deploy?uuid=$COOLIFY_API_UUID&force=false")"
+          response="$(coolify GET "/deploy?uuid=$COOLIFY_API_UUID&force=false")"
           deployment="$(jq -r '.deployments[0].deployment_uuid // empty' <<<"$response")"
           test -n "$deployment" || { echo "Coolify did not queue a deployment: $response" >&2; exit 1; }
           echo "Queued Coolify deployment $deployment for $sha"
 
           for attempt in $(seq 1 90); do
-            info="$(curl --fail --silent --show-error "${auth[@]}" "$api/deployments/$deployment" || true)"
+            info="$(coolify GET "/deployments/$deployment" || true)"
             status="$(jq -r '.status // empty' <<<"$info" 2>/dev/null || true)"
             commit="$(jq -r '.commit // empty' <<<"$info" 2>/dev/null || true)"
             case "$status" in
