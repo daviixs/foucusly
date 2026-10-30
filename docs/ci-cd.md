@@ -69,28 +69,27 @@ Os testes existentes da API usam SQLite em memória. Não há serviço externo d
 
 ### Após merge em `main`
 
-1. As imagens da API e da web são construídas a partir da raiz do monorepo e publicadas no GHCR com `sha-$GITHUB_SHA`.
-2. O workflow atualiza a tag de imagem dos dois recursos por `PATCH /api/v1/applications/{uuid}` e solicita o deploy ao Coolify.
-3. Durante até seis minutos, consulta `/api/health`, `/api/version`, `/health` e `/version.json`.
-4. Se os dois SHA coincidirem, move a tag Git `production`.
-5. Se falhar e houver baseline, restaura as duas aplicações para `sha-<production>` e confirma a recuperação por HTTP.
+O frontend web é publicado somente pelo GitHub Pages ([`pages.yml`](../.github/workflows/pages.yml)); o Coolify hospeda apenas a API.
 
-O Coolify expõe tanto a atualização de `docker_registry_image_tag` quanto o rollback de imagens; o workflow usa a primeira opção porque o tag SHA existe no GHCR e não depende da retenção local do servidor. [API de atualização](https://coolify.io/docs/api/endpoints/applications/update-application-by-uuid), [API de rollback](https://coolify.io/docs/api/endpoints/applications/rollback-application-by-uuid).
+1. A imagem da API é construída e publicada no GHCR com `sha-$GITHUB_SHA` (artefato de auditoria; o Coolify não a usa).
+2. A aplicação da API no Coolify é do tipo Dockerfile, construída a partir deste repositório. O workflow fixa o commit com `PATCH /api/v1/applications/{uuid}` (`git_commit_sha`) e dispara o deploy com `GET /api/v1/deploy?uuid={uuid}&force=false`.
+3. Acompanha `GET /api/v1/deployments/{deployment_uuid}` até `finished` (falha em `failed`/`cancelled` ou após 15 min) e confere o commit implantado quando o Coolify o informa.
+4. Durante até seis minutos, consulta `${PUBLIC_API_URL}/api/health` (e `/api/version` quando ele expõe o SHA).
+5. Se tudo passar, move a tag Git `production` (último release conhecido como bom).
+6. Se falhar e houver baseline, fixa `git_commit_sha` no SHA da tag `production`, refaz o deploy e confirma a recuperação por HTTP.
 
 ## Secrets e variables
 
-Crie o environment GitHub `production` para os secrets de deploy e registre as URLs como variables no nível do repositório (elas também são necessárias durante o build da imagem web):
+Exatamente estes valores são necessários:
 
 | Tipo | Nome | Valor |
 | --- | --- | --- |
 | Secret no environment `production` | `COOLIFY_API_URL` | URL do painel Coolify, sem `/api/v1` |
-| Secret no environment `production` | `COOLIFY_TOKEN` | Token limitado à API/deploy das aplicações |
-| Secret no environment `production` | `COOLIFY_API_UUID` | UUID do recurso da API |
-| Secret no environment `production` | `COOLIFY_WEB_UUID` | UUID do recurso web |
+| Secret no environment `production` | `COOLIFY_TOKEN` | Token com permissão de leitura/escrita/deploy na aplicação da API |
+| Secret no environment `production` | `COOLIFY_API_UUID` | UUID da aplicação da API no Coolify |
 | Variable do repositório | `PUBLIC_API_URL` | Ex.: `https://api.seudominio.js.org` |
-| Variable do repositório | `PUBLIC_WEB_URL` | Ex.: `https://app.seudominio.js.org` |
 
-O `GITHUB_TOKEN` publica no GHCR automaticamente. Em Settings → Actions, permita leitura e escrita de workflows para que a tag `production` possa ser atualizada. Proteja `main`: PR obrigatório, checks `Verify` obrigatórios, sem force push e sem secrets de produção em workflows de PR.
+`COOLIFY_WEB_UUID` e `PUBLIC_WEB_URL` não são mais usados por este workflow e podem ser removidos. O `GITHUB_TOKEN` publica no GHCR automaticamente. Em Settings → Actions, permita leitura e escrita de workflows para que a tag `production` possa ser atualizada. Proteja `main`: PR obrigatório, checks `Verify` obrigatórios, sem force push e sem secrets de produção em workflows de PR.
 
 ## Primeira publicação e recuperação
 
@@ -98,6 +97,6 @@ O `GITHUB_TOKEN` publica no GHCR automaticamente. Em Settings → Actions, permi
 2. Configure secrets/variables e abra um PR pequeno para confirmar a CI.
 3. Faça merge; o primeiro deploy saudável cria a tag `production`.
 4. Simule uma imagem com `/api/version` incompatível em ambiente seguro para validar que o workflow detecta a falha.
-5. Confirme que a imagem anterior volta a responder nos dois domínios.
+5. Confirme que o commit anterior volta a responder em `/api/health`.
 
-No primeiro deploy não existe baseline: se ele falhar, a recuperação é manual. Use os logs de deployment do Coolify e o histórico GHCR para selecionar uma imagem. Um rollback de código não recupera alterações persistentes; restaure o snapshot diário do VPS somente quando a recuperação de dados também for necessária.
+No primeiro deploy não existe baseline: se ele falhar, a recuperação é manual. Use os logs de deployment do Coolify e o histórico de commits para escolher o SHA a reimplantar. Um rollback de código não recupera alterações persistentes; restaure o snapshot diário do VPS somente quando a recuperação de dados também for necessária.

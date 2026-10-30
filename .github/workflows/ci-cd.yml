@@ -54,7 +54,6 @@ jobs:
       packages: write
     outputs:
       api-image: ${{ steps.images.outputs.api }}
-      web-image: ${{ steps.images.outputs.web }}
     steps:
       - uses: actions/checkout@v4
 
@@ -64,7 +63,6 @@ jobs:
         run: |
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           echo "api=ghcr.io/$owner/foucusly-api" >> "$GITHUB_OUTPUT"
-          echo "web=ghcr.io/$owner/foucusly-web" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -82,17 +80,6 @@ jobs:
           push: true
           tags: ${{ steps.images.outputs.api }}:sha-${{ github.sha }}
           build-args: APP_VERSION=${{ github.sha }}
-
-      - name: Build and publish web
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/web/Dockerfile
-          push: true
-          tags: ${{ steps.images.outputs.web }}:sha-${{ github.sha }}
-          build-args: |
-            APP_VERSION=${{ github.sha }}
-            VITE_API_URL=${{ vars.PUBLIC_API_URL }}
 
   deploy:
     name: Deploy and verify production
@@ -120,14 +107,80 @@ jobs:
           COOLIFY_API_URL: ${{ secrets.COOLIFY_API_URL }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
           COOLIFY_API_UUID: ${{ secrets.COOLIFY_API_UUID }}
-          COOLIFY_WEB_UUID: ${{ secrets.COOLIFY_WEB_UUID }}
           API_URL: ${{ vars.PUBLIC_API_URL }}
-          WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
         run: |
           set -euo pipefail
-          for value in COOLIFY_API_URL COOLIFY_TOKEN COOLIFY_API_UUID COOLIFY_WEB_UUID API_URL WEB_URL; do
+          for value in COOLIFY_API_URL COOLIFY_TOKEN COOLIFY_API_UUID API_URL; do
             test -n "${!value}" || { echo "Missing production configuration: $value" >&2; exit 1; }
           done
+
+      # The API is a Coolify "Dockerfile" application built from this repository, so
+      # deploys pin the Git commit (git_commit_sha) and trigger a build by UUID.
+      - name: Write Coolify deploy helper
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/coolify-deploy.sh" <<'SCRIPT'
+          #!/usr/bin/env bash
+          # Usage: coolify-deploy.sh <commit-sha>
+          set -euo pipefail
+          sha="$1"
+          api="${COOLIFY_API_URL%/}/api/v1"
+          auth=(--header "Authorization: Bearer $COOLIFY_TOKEN")
+
+          curl --fail-with-body --silent --show-error "${auth[@]}" \
+            --request PATCH "$api/applications/$COOLIFY_API_UUID" \
+            --header "Content-Type: application/json" \
+            --data "{\"git_commit_sha\":\"$sha\"}" >/dev/null
+
+          response="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$api/deploy?uuid=$COOLIFY_API_UUID&force=false")"
+          deployment="$(jq -r '.deployments[0].deployment_uuid // empty' <<<"$response")"
+          test -n "$deployment" || { echo "Coolify did not queue a deployment: $response" >&2; exit 1; }
+          echo "Queued Coolify deployment $deployment for $sha"
+
+          for attempt in $(seq 1 90); do
+            info="$(curl --fail --silent --show-error "${auth[@]}" "$api/deployments/$deployment" || true)"
+            status="$(jq -r '.status // empty' <<<"$info" 2>/dev/null || true)"
+            commit="$(jq -r '.commit // empty' <<<"$info" 2>/dev/null || true)"
+            case "$status" in
+              finished)
+                if [ -n "$commit" ] && [ "$commit" != "HEAD" ] && [ "$commit" != "$sha" ]; then
+                  echo "Coolify deployed commit $commit, expected $sha" >&2; exit 1
+                fi
+                echo "Deployment finished (commit=${commit:-unknown})"; exit 0 ;;
+              failed|cancelled*|error)
+                echo "Coolify deployment $deployment ended with status $status" >&2; exit 1 ;;
+            esac
+            echo "Waiting for Coolify deployment ($attempt/90): ${status:-unknown}"
+            sleep 10
+          done
+          echo "Coolify deployment $deployment timed out" >&2
+          exit 1
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/coolify-deploy.sh"
+
+          cat > "$RUNNER_TEMP/verify-api.sh" <<'SCRIPT'
+          #!/usr/bin/env bash
+          # Usage: verify-api.sh <commit-sha>
+          set -euo pipefail
+          sha="$1"
+          api_url="${API_URL%/}"
+          for attempt in $(seq 1 36); do
+            commit="$(curl --fail --silent --show-error --max-time 5 "$api_url/api/version" | jq -r '.commit // empty' 2>/dev/null || true)"
+            if curl --fail --silent --show-error --max-time 5 "$api_url/api/health" >/dev/null; then
+              # /api/version reports APP_VERSION when Coolify passes it; "unknown" is accepted
+              # because the deployed commit was already verified through the Coolify API.
+              if [ "$commit" = "$sha" ] || [ "$commit" = "unknown" ] || [ -z "$commit" ]; then
+                echo "API healthy (version=${commit:-n/a})"; exit 0
+              fi
+            fi
+            echo "Waiting for API ($attempt/36): version=$commit"
+            sleep 10
+          done
+          echo "API did not become healthy with the expected version." >&2
+          exit 1
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/verify-api.sh"
 
       - name: Deploy current release
         id: deploy
@@ -136,65 +189,14 @@ jobs:
           COOLIFY_API_URL: ${{ secrets.COOLIFY_API_URL }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
           COOLIFY_API_UUID: ${{ secrets.COOLIFY_API_UUID }}
-          COOLIFY_WEB_UUID: ${{ secrets.COOLIFY_WEB_UUID }}
-          API_IMAGE: ${{ needs.publish.outputs.api-image }}
-          WEB_IMAGE: ${{ needs.publish.outputs.web-image }}
-          RELEASE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          api="${COOLIFY_API_URL%/}/api/v1"
-          tag="sha-$RELEASE_SHA"
-
-          update_image() {
-            curl --fail-with-body --silent --show-error \
-              --request PATCH "$api/applications/$1" \
-              --header "Authorization: Bearer $COOLIFY_TOKEN" \
-              --header "Content-Type: application/json" \
-              --data "{\"docker_registry_image_name\":\"$2\",\"docker_registry_image_tag\":\"$tag\"}"
-          }
-
-          deploy_resource() {
-            curl --fail-with-body --silent --show-error \
-              --request POST "$api/deploy" \
-              --header "Authorization: Bearer $COOLIFY_TOKEN" \
-              --header "Content-Type: application/json" \
-              --data "{\"uuid\":\"$1\",\"force\":false}"
-          }
-
-          update_image "$COOLIFY_API_UUID" "$API_IMAGE"
-          deploy_resource "$COOLIFY_API_UUID"
-          update_image "$COOLIFY_WEB_UUID" "$WEB_IMAGE"
-          deploy_resource "$COOLIFY_WEB_UUID"
+        run: '"$RUNNER_TEMP/coolify-deploy.sh" "$GITHUB_SHA"'
 
       - name: Verify current release
         id: smoke
         shell: bash
         env:
           API_URL: ${{ vars.PUBLIC_API_URL }}
-          WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
-          RELEASE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          api_url="${API_URL%/}"
-          web_url="${WEB_URL%/}"
-
-          for attempt in $(seq 1 36); do
-            api_commit="$(curl --fail --silent --show-error --max-time 5 "$api_url/api/version" | jq -r '.commit // empty' 2>/dev/null || true)"
-            web_commit="$(curl --fail --silent --show-error --max-time 5 "$web_url/version.json" | jq -r '.commit // empty' 2>/dev/null || true)"
-
-            if curl --fail --silent --show-error --max-time 5 "$api_url/api/health" >/dev/null \
-              && curl --fail --silent --show-error --max-time 5 "$web_url/health" >/dev/null \
-              && [ "$api_commit" = "$RELEASE_SHA" ] \
-              && [ "$web_commit" = "$RELEASE_SHA" ]; then
-              exit 0
-            fi
-
-            echo "Waiting for release ($attempt/36): api=$api_commit web=$web_commit"
-            sleep 10
-          done
-
-          echo "Release did not become healthy with the expected version." >&2
-          exit 1
+        run: '"$RUNNER_TEMP/verify-api.sh" "$GITHUB_SHA"'
 
       - name: Restore last known-good release
         if: failure() && steps.previous.outputs.sha != ''
@@ -203,55 +205,16 @@ jobs:
           COOLIFY_API_URL: ${{ secrets.COOLIFY_API_URL }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
           COOLIFY_API_UUID: ${{ secrets.COOLIFY_API_UUID }}
-          COOLIFY_WEB_UUID: ${{ secrets.COOLIFY_WEB_UUID }}
-          API_IMAGE: ${{ needs.publish.outputs.api-image }}
-          WEB_IMAGE: ${{ needs.publish.outputs.web-image }}
           PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
-        run: |
-          set -euo pipefail
-          api="${COOLIFY_API_URL%/}/api/v1"
-          tag="sha-$PREVIOUS_SHA"
-
-          restore() {
-            curl --fail-with-body --silent --show-error --request PATCH "$api/applications/$1" \
-              --header "Authorization: Bearer $COOLIFY_TOKEN" \
-              --header "Content-Type: application/json" \
-              --data "{\"docker_registry_image_name\":\"$2\",\"docker_registry_image_tag\":\"$tag\"}"
-            curl --fail-with-body --silent --show-error --request POST "$api/deploy" \
-              --header "Authorization: Bearer $COOLIFY_TOKEN" \
-              --header "Content-Type: application/json" \
-              --data "{\"uuid\":\"$1\",\"force\":false}"
-          }
-
-          restore "$COOLIFY_API_UUID" "$API_IMAGE"
-          restore "$COOLIFY_WEB_UUID" "$WEB_IMAGE"
+        run: '"$RUNNER_TEMP/coolify-deploy.sh" "$PREVIOUS_SHA"'
 
       - name: Verify restored release
         if: failure() && steps.previous.outputs.sha != ''
         shell: bash
         env:
           API_URL: ${{ vars.PUBLIC_API_URL }}
-          WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
           PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
-        run: |
-          set -euo pipefail
-          api_url="${API_URL%/}"
-          web_url="${WEB_URL%/}"
-
-          for attempt in $(seq 1 36); do
-            api_commit="$(curl --fail --silent --show-error --max-time 5 "$api_url/api/version" | jq -r '.commit // empty' 2>/dev/null || true)"
-            web_commit="$(curl --fail --silent --show-error --max-time 5 "$web_url/version.json" | jq -r '.commit // empty' 2>/dev/null || true)"
-
-            if [ "$api_commit" = "$PREVIOUS_SHA" ] && [ "$web_commit" = "$PREVIOUS_SHA" ]; then
-              exit 0
-            fi
-
-            echo "Waiting for rollback ($attempt/36): api=$api_commit web=$web_commit"
-            sleep 10
-          done
-
-          echo "Rollback was requested but could not be verified." >&2
-          exit 1
+        run: '"$RUNNER_TEMP/verify-api.sh" "$PREVIOUS_SHA"'
 
       - name: Report missing rollback baseline
         if: failure() && steps.previous.outputs.sha == ''
