@@ -1,9 +1,9 @@
 import type { AppDatabase } from "../db.js";
 import { readSettings } from "../db.js";
-import type { DetailedSession, ProjectReport, RankingEntry, ReportBucket, ReportData, ReportPeriod, SessionRecord } from "@foucusly/contracts";
+import type { DetailedSession, ProjectReport, RankingBy, RankingEntry, ReportBucket, ReportData, ReportPeriod, SessionRecord } from "@foucusly/contracts";
 
 export interface ReportQuery { period: ReportPeriod; date: string; }
-export type RankingBy = "project" | "task";
+export type { RankingBy };
 
 interface Bounds { startDate: string; endDate: string; dayCount: number; startUtc: string; endUtc: string; }
 
@@ -144,7 +144,25 @@ export function getReportDetail(db: AppDatabase, profileId: string, query: Repor
     .all(profileId, bounds.startUtc, bounds.endUtc) as DetailedSession[];
 }
 
+function sortRanking(entries: Iterable<RankingEntry>): RankingEntry[] {
+  return [...entries]
+    .sort((a, b) => b.focusSeconds - a.focusSeconds || b.sessions - a.sessions || a.name.localeCompare(b.name))
+    .map((entry, index) => ({ ...entry, rank: index + 1 }));
+}
+
+/** Ranks every local profile (user) by completed pomodoro focus time in the requested period. */
+function getUserRanking(db: AppDatabase, profileId: string, query: ReportQuery): RankingEntry[] {
+  const bounds = boundsFor(db, profileId, query);
+  const rows = db.prepare(`SELECT p.id AS id, p.username AS name,
+      COALESCE(SUM(s.duration_seconds), 0) AS focusSeconds, COUNT(s.id) AS sessions
+    FROM profiles p JOIN sessions s ON s.profile_id=p.id
+    WHERE s.mode='pomodoro' AND s.ended_at >= ? AND s.ended_at < ?
+    GROUP BY p.id, p.username`).all(bounds.startUtc, bounds.endUtc) as Array<{ id: string; name: string; focusSeconds: number; sessions: number }>;
+  return sortRanking(rows.map((row) => ({ rank: 0, id: row.id, name: row.name, projectId: null, focusSeconds: row.focusSeconds, sessions: row.sessions, isCurrentUser: row.id === profileId })));
+}
+
 export function getReportRanking(db: AppDatabase, profileId: string, query: ReportQuery, by: RankingBy): RankingEntry[] {
+  if (by === "user") return getUserRanking(db, profileId, query);
   const sessions = readSessions(db, profileId, boundsFor(db, profileId, query));
   const projectNames = new Map((db.prepare("SELECT id, name FROM projects WHERE profile_id=?").all(profileId) as Array<{ id: string; name: string }>).map(({ id, name }) => [id, name]));
   const grouped = new Map<string, RankingEntry>();
@@ -155,13 +173,11 @@ export function getReportRanking(db: AppDatabase, profileId: string, query: Repo
     const name = by === "project"
       ? (id ? projectNames.get(id) ?? "Archived project" : "No project")
       : session.taskTitle ?? "Untitled task";
-    const entry = grouped.get(key) ?? { rank: 0, id, name, projectId: by === "task" ? session.projectId : null, focusSeconds: 0, sessions: 0 };
+    const entry = grouped.get(key) ?? { rank: 0, id, name, projectId: by === "task" ? session.projectId : null, focusSeconds: 0, sessions: 0, isCurrentUser: false };
     entry.focusSeconds += session.durationSeconds;
     entry.sessions++;
     grouped.set(key, entry);
   }
-  return [...grouped.values()]
-    .sort((a, b) => b.focusSeconds - a.focusSeconds || a.name.localeCompare(b.name))
-    .map((entry, index) => ({ ...entry, rank: index + 1 }));
+  return sortRanking(grouped.values());
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight, ChartLineUp, Folder, ListChecks, NotePencil, PlusCircle, Trash, Trophy, X } from "@phosphor-icons/react";
-import type { DetailedSession, RankingEntry, ReportData, ReportPeriod } from "@foucusly/contracts";
+import { ArrowLeft, ArrowRight, ChartLineUp, Folder, ListChecks, NotePencil, PlusCircle, Trash, Trophy, User, X } from "@phosphor-icons/react";
+import type { DetailedSession, RankingBy, RankingEntry, ReportData, ReportPeriod } from "@foucusly/contracts";
 import { api } from "../api";
 
 interface Props { onClose: () => void; }
@@ -70,7 +70,7 @@ export function ReportDialog({ onClose }: Props) {
   const [period, setPeriod] = useState<ReportPeriod>("week");
   const [date, setDate] = useState(dateKey(new Date()));
   const [view, setView] = useState<ReportView>("Summary");
-  const [rankingBy, setRankingBy] = useState<"project" | "task">("project");
+  const [rankingBy, setRankingBy] = useState<RankingBy>("user");
   const [report, setReport] = useState<ReportData | null>(null);
   const [sessions, setSessions] = useState<DetailedSession[]>([]);
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
@@ -161,8 +161,8 @@ export function ReportDialog({ onClose }: Props) {
               </span>
             </div>) : <p>No completed focus sessions in this period.</p>}</div>
           </>}
-          {view === "Ranking" && <div className="report-ranking"><div className="report-ranking-tabs" role="tablist" aria-label="Rank by"><button role="tab" aria-selected={rankingBy === "project"} className={rankingBy === "project" ? "active" : ""} onClick={() => setRankingBy("project")}><Folder size={14} /> Projects</button><button role="tab" aria-selected={rankingBy === "task"} className={rankingBy === "task" ? "active" : ""} onClick={() => setRankingBy("task")}><ListChecks size={14} /> Tasks</button></div>
-            {ranking.length ? <ol>{ranking.map((entry) => <li key={`${entry.id ?? "none"}-${entry.projectId ?? "none"}`}><span className="ranking-position"><Trophy size={14} /> {entry.rank}</span><span className="ranking-name">{entry.name}{rankingBy === "task" && entry.projectId && report?.projects.find((item) => item.projectId === entry.projectId) && <small>{report.projects.find((item) => item.projectId === entry.projectId)?.projectName}</small>}</span><strong>{durationText(entry.focusSeconds)}</strong></li>)}</ol> : <p className="report-empty">No completed focus sessions in this period.</p>}
+          {view === "Ranking" && <div className="report-ranking"><div className="report-ranking-tabs" role="tablist" aria-label="Rank by"><button type="button" role="tab" aria-selected={rankingBy === "user"} className={rankingBy === "user" ? "active" : ""} onClick={() => setRankingBy("user")}><User size={14} /> Users</button><button role="tab" aria-selected={rankingBy === "project"} className={rankingBy === "project" ? "active" : ""} onClick={() => setRankingBy("project")}><Folder size={14} /> Projects</button><button role="tab" aria-selected={rankingBy === "task"} className={rankingBy === "task" ? "active" : ""} onClick={() => setRankingBy("task")}><ListChecks size={14} /> Tasks</button></div>
+            {ranking.length ? <ol>{ranking.map((entry) => <li key={`${entry.id ?? "none"}-${entry.projectId ?? "none"}`} className={entry.isCurrentUser ? "ranking-current-user" : undefined}><span className="ranking-position"><Trophy size={14} /> {entry.rank}</span><span className="ranking-name">{rankingBy === "user" && <span className="ranking-avatar" aria-hidden="true">{entry.name.charAt(0).toUpperCase()}</span>}{entry.name}{rankingBy === "user" && <small>{entry.isCurrentUser ? "You · " : ""}{entry.sessions} {entry.sessions === 1 ? "pomodoro" : "pomodoros"}</small>}{rankingBy === "task" && entry.projectId && report?.projects.find((item) => item.projectId === entry.projectId) && <small>{report.projects.find((item) => item.projectId === entry.projectId)?.projectName}</small>}</span><strong>{durationText(entry.focusSeconds)}</strong></li>)}</ol> : <p className="report-empty">No completed focus sessions in this period.</p>}
           </div>}
         </>}
         <p className="report-note">Your report is stored on this device and available without signing in.</p>

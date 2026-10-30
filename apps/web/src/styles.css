@@ -25,6 +25,9 @@
 .ranking-name{min-width:0;flex:1;overflow:hidden;color:#666;text-overflow:ellipsis;white-space:nowrap}
 .ranking-name small{display:block;margin-top:3px;color:#aaa;font-size:9px}
 .report-ranking li>strong{color:#555;white-space:nowrap}
+.ranking-avatar{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-right:6px;border-radius:50%;background:#ba4949;color:white;font-size:9px;font-weight:700;vertical-align:middle}
+.report-ranking li.ranking-current-user{background:#fbf1f1}
+.report-ranking li.ranking-current-user .ranking-name{color:#ba4949;font-weight:600}
 .project-picker-row{display:flex;align-items:center;gap:7px;margin-top:10px}
 .project-picker{min-width:0;flex:1;display:flex;align-items:center;gap:7px;color:#999;font-size:11px}
 .project-picker select{min-width:0;flex:1;height:31px;padding:0 8px;border:1px solid #e5e5e5;border-radius:3px;background:#fff;color:#666;font-size:11px}
