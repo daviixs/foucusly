@@ -80,7 +80,7 @@ describe("session history management", () => {  beforeEach(() => {
     expect(deleted.statusCode).toBe(204);
     const repeat = await post(`/api/sessions/${created.id}`, undefined, owner, "DELETE");
     expect(repeat.statusCode).toBe(404);
-    const detail = await app.inject({ method: "GET", url: "/api/reports/detail?period=day&date=" + iso(0).slice(0, 10), headers: { "x-profile-id": owner } });
+    const detail = await app.inject({ method: "GET", url: "/api/reports/detail?period=day", headers: { "x-profile-id": owner } });
     expect((detail.json() as { sessions: unknown[] }).sessions).toHaveLength(0);
   });
 
@@ -89,7 +89,7 @@ describe("session history management", () => {  beforeEach(() => {
     other = createProfile(db, "owner-b").id;
     const response = await post("/api/sessions/manual", { startedAt: iso(1200), endedAt: iso(0) });
     const created = (response.json() as { session?: { id: string } }).session;
-    const foreignGet = await app.inject({ method: "GET", url: "/api/reports/detail?period=day&date=" + iso(0).slice(0, 10), headers: { "x-profile-id": other } });
+    const foreignGet = await app.inject({ method: "GET", url: "/api/reports/detail?period=day", headers: { "x-profile-id": other } });
     expect((foreignGet.json() as { sessions: unknown[] }).sessions).toHaveLength(0);
     const foreignPatch = await app.inject({ method: "PATCH", url: `/api/sessions/${created?.id}`, headers: { "x-profile-id": other, "content-type": "application/json" }, payload: { taskTitle: "hijack" } });
     expect(foreignPatch.statusCode).toBe(404);
