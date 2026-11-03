@@ -1,4 +1,4 @@
-import type { BootstrapData, DetailedSession, Profile, Project, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskBulkAction, TimerState, WebhookTestResult } from "@foucusly/contracts";
+import type { BootstrapData, DetailedSession, Profile, Project, RankingBy, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskBulkAction, TimerState, WebhookTestResult } from "@foucusly/contracts";
 
 let activeProfileId = "";
 /** Base URL of the API. Empty string = same origin (dev uses the Vite proxy for /api). */
@@ -53,6 +53,6 @@ export const api = {
   completeSession: (session: { id: string; mode: TimerState["mode"]; startedAt: string; endedAt: string; durationSeconds: number; taskId: string | null; taskTitle: string | null; projectId: string | null }) => request<{ saved: true; duplicate: boolean }>("/sessions", { method: "POST", body: JSON.stringify(session) }),
   report: (period: ReportPeriod, date: string) => request<ReportData>(`/reports?period=${period}&date=${date}`),
   reportDetail: (period: ReportPeriod, date: string) => request<{ sessions: DetailedSession[] }>(`/reports/detail?period=${period}&date=${date}`),
-  reportRanking: (period: ReportPeriod, date: string, by: "project" | "task") => request<{ by: "project" | "task"; entries: RankingEntry[] }>(`/reports/ranking?period=${period}&date=${date}&by=${by}`)
+  reportRanking: (period: ReportPeriod, date: string, by: RankingBy) => request<{ by: RankingBy; entries: RankingEntry[] }>(`/reports/ranking?period=${period}&date=${date}&by=${by}`)
 };
 

@@ -127,13 +127,20 @@ export interface DetailedSession extends SessionRecord {
   projectName: string;
 }
 
+export type RankingBy = "user" | "project" | "task";
+
 export interface RankingEntry {
   rank: number;
+  /** Profile id when ranking by user, otherwise the project/task id. */
   id: string | null;
+  /** Username when ranking by user, otherwise the project name or task title. */
   name: string;
   projectId: string | null;
   focusSeconds: number;
+  /** Completed pomodoro sessions. */
   sessions: number;
+  /** True when the entry is the requesting profile (only meaningful when ranking by user). */
+  isCurrentUser: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
