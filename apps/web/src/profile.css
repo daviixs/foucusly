@@ -94,14 +94,12 @@
 /* Profile modal dialog adopting the SettingsDialog glass section theme */
 .section-dialog.profile-dialog,
 .section-dialog.delete-account-dialog,
-.section-dialog.shortcuts-dialog,
-.section-dialog.premium-dialog{
+.section-dialog.shortcuts-dialog{
   width:min(440px, 100%);
   animation:dialog-fade-in .2s ease-out;
 }
 
-.section-dialog.shortcuts-dialog,
-.section-dialog.premium-dialog{
+.section-dialog.shortcuts-dialog{
   width:min(480px, 100%);
 }
 
@@ -265,10 +263,6 @@
   color:#b91c1c !important;
 }
 
-.premium-icon{
-  color:#cca43b !important;
-}
-
 /* Shortcuts Dialog content */
 .shortcuts-content{
   padding:0 32px 14px;
@@ -301,35 +295,6 @@
   box-shadow:0 2px 0 rgba(95,128,145,.2);
 }
 
-/* Premium Dialog content */
-.premium-content{
-  padding:0 32px 14px;
-}
-
-.premium-features-list{
-  margin:0;
-  padding:0;
-  list-style:none;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  text-align:left;
-}
-
-.premium-features-list li{
-  padding:11px 14px;
-  border:1px solid rgba(95,128,145,.2);
-  border-radius:9px;
-  background:rgba(255,255,255,.45);
-  font-size:13px;
-  line-height:1.5;
-  color:#3b4952;
-}
-
-.premium-features-list strong{
-  color:#1e293b;
-}
-
 .dark-running .profile-input{
   border-color:rgba(255,255,255,.2);
   background:rgba(255,255,255,.8);
@@ -344,14 +309,12 @@
   .top-actions{gap:5px}
   .section-dialog.profile-dialog,
   .section-dialog.delete-account-dialog,
-  .section-dialog.shortcuts-dialog,
-  .section-dialog.premium-dialog{
+  .section-dialog.shortcuts-dialog{
     width:100%;
     border-radius:22px;
   }
   .profile-dialog .profile-content,
-  .shortcuts-content,
-  .premium-content{
+  .shortcuts-content{
     padding:0 18px 8px;
   }
   .profile-dialog .dialog-footer{
