@@ -41,7 +41,7 @@ export const pushRoutes: FastifyPluginAsync<PushRoutesOptions> = async (app, { d
   app.delete("/api/push/subscribe", { config: { rateLimit: pushRateLimit } }, async (request, reply) => {
     const input = z.object({ endpoint: z.string().min(1).max(1000) }).parse(request.body);
     if (typeof input.endpoint === "string" && !extractEndpoint(input.endpoint) && !input.endpoint.startsWith("https://")) return reply.code(400).send({ error: "Subscription endpoint is missing" });
-    if (!deletePushSubscription(db, input.endpoint)) return reply.code(404).send({ error: "Subscription not found" });
+    if (!deletePushSubscription(db, input.endpoint, request.headers["x-profile-id"] as string)) return reply.code(404).send({ error: "Subscription not found" });
     return reply.code(204).send();
   });
 

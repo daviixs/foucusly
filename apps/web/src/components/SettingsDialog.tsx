@@ -3,6 +3,17 @@ import { BellRinging, Check, GearSix, X } from "@phosphor-icons/react";
 import { DEFAULT_SETTINGS, isAllowedWebhookUrl, type Settings, type ThemeColor, type WebhookEvent } from "@foucusly/contracts";
 import { api } from "../api";
 import { ALARM_SOUNDS, playAlarm } from "../audio/alarm";
+import { startFocusSound } from "../audio/focusSound";
+
+const FOCUS_PREVIEW_MS = 2000;
+let stopFocusPreview: (() => void) | null = null;
+/** Plays a short sample so focus sound and volume changes are audible before saving. */
+function previewFocusSound(sound: string, volume: number) {
+  stopFocusPreview?.();
+  const stop = startFocusSound(sound, volume);
+  stopFocusPreview = stop;
+  window.setTimeout(() => { if (stopFocusPreview === stop) { stop(); stopFocusPreview = null; } }, FOCUS_PREVIEW_MS);
+}
 
 function urlBase64ToUint8Array(base64Url: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
@@ -142,8 +153,8 @@ export function SettingsDialog({ initial, onSave, onClose, onToast }: Props) {
           <NumberSetting label="Long Break interval" value={settings.longBreakInterval} min={2} max={12} onChange={(value) => set("longBreakInterval", value)} />
         </section>
         <section className="settings-group"><h3>Task</h3><div className="toggle-stack"><ToggleSetting label="Auto Check Tasks" checked={settings.autoCheckTasks} onChange={(value) => set("autoCheckTasks", value)} /><ToggleSetting label="Check to Bottom" checked={settings.checkToBottom} onChange={(value) => set("checkToBottom", value)} /></div></section>
-        <section className="settings-group"><h3>Sound</h3><div className="sound-settings"><SelectSetting label="Alarm Sound" value={settings.alarmSound} options={ALARM_SOUNDS} onChange={(value) => { set("alarmSound", value); void playAlarm({ ...settings, alarmSound: value, alarmRepeat: 1 }); }} /><label className="range-setting"><span>Volume</span><input aria-label="Alarm volume" type="range" min={0} max={100} value={settings.alarmVolume} onChange={(event) => set("alarmVolume", Number(event.target.value))} onPointerUp={() => void playAlarm({ ...settings, alarmRepeat: 1 })} /><output>{settings.alarmVolume}</output></label><NumberSetting label="Repeat" value={settings.alarmRepeat} min={1} max={5} onChange={(value) => set("alarmRepeat", value)} /></div>
-          <div className="sound-settings"><SelectSetting label="Focus Sound" value={settings.focusSound} options={["None", "Rain", "Cafe", "Forest", "White noise"]} onChange={(value) => set("focusSound", value)} /><label className="range-setting"><span>Volume</span><input aria-label="Focus sound volume" type="range" min={0} max={100} value={settings.focusVolume} onChange={(event) => set("focusVolume", Number(event.target.value))} /><output>{settings.focusVolume}</output></label></div>
+        <section className="settings-group"><h3>Sound</h3><div className="sound-settings"><SelectSetting label="Alarm Sound" value={settings.alarmSound} options={ALARM_SOUNDS} onChange={(value) => { set("alarmSound", value); void playAlarm({ ...settings, alarmSound: value, alarmRepeat: 1 }); }} /><label className="range-setting"><span>Volume</span><input aria-label="Alarm volume" type="range" min={0} max={100} value={settings.alarmVolume} onChange={(event) => set("alarmVolume", Number(event.target.value))} onPointerUp={(event) => void playAlarm({ ...settings, alarmVolume: Number(event.currentTarget.value), alarmRepeat: 1 })} onKeyUp={(event) => void playAlarm({ ...settings, alarmVolume: Number(event.currentTarget.value), alarmRepeat: 1 })} /><output>{settings.alarmVolume}</output></label><NumberSetting label="Repeat" value={settings.alarmRepeat} min={1} max={5} onChange={(value) => set("alarmRepeat", value)} /></div>
+          <div className="sound-settings"><SelectSetting label="Focus Sound" value={settings.focusSound} options={["None", "Rain", "Cafe", "Forest", "White noise"]} onChange={(value) => { set("focusSound", value); previewFocusSound(value, settings.focusVolume); }} /><label className="range-setting"><span>Volume</span><input aria-label="Focus sound volume" type="range" min={0} max={100} value={settings.focusVolume} onChange={(event) => set("focusVolume", Number(event.target.value))} onPointerUp={(event) => previewFocusSound(settings.focusSound, Number(event.currentTarget.value))} onKeyUp={(event) => previewFocusSound(settings.focusSound, Number(event.currentTarget.value))} /><output>{settings.focusVolume}</output></label></div>
         </section>
         <section className="settings-group"><h3>Time Display</h3><div className="select-grid"><SelectSetting label="Hour Format" value={settings.hourFormat} options={["24-hour", "12-hour"]} onChange={(value) => set("hourFormat", value as Settings["hourFormat"])} /><SelectSetting label="Week starts on" value={settings.weekStartsOn === 1 ? "Monday" : "Sunday"} options={["Monday", "Sunday"]} onChange={(value) => set("weekStartsOn", value === "Monday" ? 1 : 0)} /></div></section>
         <section className="settings-group"><h3>Theme</h3><p className="settings-hint">Color</p>
