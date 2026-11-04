@@ -5,7 +5,7 @@ import { getReportRanking } from "../../services/reporting.js";
 import { parseReportQuery } from "../report-query.js";
 
 interface Options { db: AppDatabase; }
-const rankingQuerySchema = z.object({ by: z.enum(["project", "task"]).default("project") });
+const rankingQuerySchema = z.object({ by: z.enum(["user", "project", "task"]).default("user") });
 
 export const reportRankingRoutes: FastifyPluginAsync<Options> = async (app, { db }) => {
   app.get("/api/reports/ranking", async (request) => {

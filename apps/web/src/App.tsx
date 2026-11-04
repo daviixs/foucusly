@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowClockwise, Crown, Keyboard, Trash, X } from "@phosphor-icons/react";
+import { ArrowClockwise, Keyboard, Trash, X } from "@phosphor-icons/react";
 import { ADVANCE_REMINDER_MIN_REMAINING_MS, DEFAULT_SETTINGS, NIGHT_ENDS_AT_HOUR, NIGHT_STARTS_AT_HOUR, advanceReminderCopy, durationForMode, isNightTime, type BootstrapData, type Profile, type Settings, type Task, type TaskBulkAction, type TimerMode, type TimerState } from "@foucusly/contracts";
 import { api } from "./api";
 import { Header } from "./components/Header";
@@ -9,6 +9,7 @@ import CloudBackdrop from "./components/CloudBackdrop";
 import DarkStarfield from "./components/DarkStarfield";
 import { TasksPanel } from "./components/tasks/TasksPanel";
 import { TimerPanel } from "./components/TimerPanel";
+import { useAmbientTimerSync } from "./hooks/useAmbientSound";
 import { playAlarm } from "./audio/alarm";
 import { installAudioUnlock } from "./audio/engine";
 import { startFocusSound } from "./audio/focusSound";
@@ -74,7 +75,6 @@ export function App() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
-  const [premiumDialogOpen, setPremiumDialogOpen] = useState(false);
   const [timer, setTimer] = useState<TimerState | null>(null);
   const [now, setNow] = useState(Date.now());
   const [isNight, setIsNight] = useState(() => isNightTime(new Date()));
@@ -202,6 +202,8 @@ export function App() {
     return startFocusSound(data.settings.focusSound, data.settings.focusVolume);
   }, [timer?.running, data?.settings.focusSound, data?.settings.focusVolume]);
 
+  useAmbientTimerSync(profile?.id, Boolean(timer?.running && timer.mode === "pomodoro"));
+
   const persistTimer = useCallback(async (next: TimerState) => {
     setTimer(next);
     timerRef.current = next;
@@ -296,7 +298,6 @@ export function App() {
         setDialog(null);
         setDeleteDialogOpen(false);
         setShortcutsDialogOpen(false);
-        setPremiumDialogOpen(false);
         if (profile) {
           setProfileDialogOpen(false);
           setProfileCreateMode(false);
@@ -364,7 +365,6 @@ export function App() {
             setProfileCreateMode(false);
             setProfileDialogOpen(true);
           }}
-          onPremium={() => setPremiumDialogOpen(true)}
           onLogout={handleLogout}
           onShortcuts={() => setShortcutsDialogOpen(true)}
           onDeleteAccount={() => setDeleteDialogOpen(true)}
@@ -505,59 +505,6 @@ export function App() {
               onClick={() => setShortcutsDialogOpen(false)}
             >
               Got it
-            </button>
-          </footer>
-        </section>
-      </div>
-    )}
-    {premiumDialogOpen && (
-      <div
-        className="dialog-backdrop"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setPremiumDialogOpen(false);
-        }}
-      >
-        <section
-          className="section-dialog premium-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="premium-dialog-title"
-        >
-          <header className="section-dialog-header">
-            <button
-              className="dialog-close"
-              aria-label="Close"
-              onClick={() => setPremiumDialogOpen(false)}
-            >
-              <X size={20} />
-            </button>
-            <span className="section-dialog-icon premium-icon">
-              <Crown size={28} weight="duotone" />
-            </span>
-            <span className="dialog-eyebrow">UPGRADE</span>
-            <h2 id="premium-dialog-title">Foucusly Premium</h2>
-            <p>Supercharge your daily focus sessions with pro features.</p>
-          </header>
-          <div className="premium-content">
-            <ul className="premium-features-list">
-              <li>
-                <strong>Connected workflows:</strong> Outbound webhooks are included in Settings. Discord, Slack, and Notion presets may come later.
-              </li>
-              <li>
-                <strong>Ambient Audio Library:</strong> High-definition binaural beats and cafe/nature soundscapes.
-              </li>
-              <li>
-                <strong>Deep Ranking & Analytics:</strong> Export full CSV reports with detailed project timeline insights.
-              </li>
-            </ul>
-          </div>
-          <footer className="dialog-footer">
-            <button
-              type="button"
-              className="button-dark"
-              onClick={() => setPremiumDialogOpen(false)}
-            >
-              Close
             </button>
           </footer>
         </section>

@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ChartLineUp,
-  CheckCircle,
-  Crown,
   GearSix,
   Keyboard,
   SignIn,
@@ -11,11 +9,11 @@ import {
   User
 } from "@phosphor-icons/react";
 import type { Profile } from "@foucusly/contracts";
+import logo from "../assets/logo.png";
 
 interface HeaderProps {
   profile: Profile | null;
   onAccount: () => void;
-  onPremium: () => void;
   onLogout: () => void;
   onShortcuts: () => void;
   onDeleteAccount: () => void;
@@ -27,7 +25,6 @@ interface HeaderProps {
 export function Header({
   profile,
   onAccount,
-  onPremium,
   onLogout,
   onShortcuts,
   onDeleteAccount,
@@ -70,7 +67,7 @@ export function Header({
     <header className="topbar">
       <a className="brand" href={import.meta.env.BASE_URL} aria-label="Foucusly home">
         <span className="brand-mark">
-          <CheckCircle size={21} weight="fill" />
+          <img src={logo} alt="" width={24} height={24} style={{ borderRadius: 4 }} />
         </span>
         <span>Foucusly</span>
       </a>
@@ -107,18 +104,6 @@ export function Header({
                 >
                   <User size={17} weight="fill" />
                   <span>Account</span>
-                </button>
-
-                <button
-                  role="menuitem"
-                  className="profile-menu-item"
-                  onClick={() => {
-                    setProfileMenuOpen(false);
-                    onPremium();
-                  }}
-                >
-                  <Crown size={17} weight="fill" />
-                  <span>Premium</span>
                 </button>
 
                 <button
@@ -202,14 +187,6 @@ export function Header({
                     }}
                   >
                     <User size={16} weight="fill" /> Account
-                  </button>
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onPremium();
-                    }}
-                  >
-                    <Crown size={16} weight="fill" /> Premium
                   </button>
                   <button
                     onClick={() => {
