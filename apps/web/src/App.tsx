@@ -9,6 +9,7 @@ import CloudBackdrop from "./components/CloudBackdrop";
 import DarkStarfield from "./components/DarkStarfield";
 import { TasksPanel } from "./components/tasks/TasksPanel";
 import { TimerPanel } from "./components/TimerPanel";
+import { useAmbientTimerSync } from "./hooks/useAmbientSound";
 import { playAlarm } from "./audio/alarm";
 import { installAudioUnlock } from "./audio/engine";
 import { startFocusSound } from "./audio/focusSound";
@@ -200,6 +201,8 @@ export function App() {
     if (!timer?.running || !data) return;
     return startFocusSound(data.settings.focusSound, data.settings.focusVolume);
   }, [timer?.running, data?.settings.focusSound, data?.settings.focusVolume]);
+
+  useAmbientTimerSync(profile?.id, Boolean(timer?.running && timer.mode === "pomodoro"));
 
   const persistTimer = useCallback(async (next: TimerState) => {
     setTimer(next);

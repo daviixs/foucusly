@@ -1,0 +1,9 @@
+.ambient-settings{margin-top:14px}
+.ambient-options{display:flex;gap:6px;margin:8px 0 4px}
+.ambient-option{flex:1;height:32px;border:1px solid #ddd;border-radius:3px;background:#fff;color:#666;font-size:12px}
+.ambient-option.selected{background:#555;border-color:#555;color:#fff;font-weight:700}
+.ambient-settings .sound-settings{grid-template-columns:1fr auto}
+.ambient-toggle{position:absolute;left:14px;top:50%;transform:translateY(-50%);height:38px;width:38px;border:0;border-radius:4px;background:transparent;color:#ffffffb8;display:grid;place-items:center}
+.ambient-toggle:hover{background:#ffffff24;color:#fff}
+@media(max-width:600px){.ambient-toggle{left:1px}}
+.ambient-options{border:0;padding:0;min-width:0}

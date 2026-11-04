@@ -1,5 +1,6 @@
 import { FastForward, Pause, Play } from "@phosphor-icons/react";
 import type { TimerMode } from "@foucusly/contracts";
+import { AmbientToggle } from "./AmbientSound";
 
 const modes: Array<{ key: TimerMode; label: string }> = [
   { key: "pomodoro", label: "Pomodoro" },
@@ -36,6 +37,7 @@ export function TimerPanel({ mode, seconds, running, taskTitle, cyclePomos, long
       </div>
       <div className="timer-readout" aria-live="off">{minutes}:{remainder}</div>
       <div className="timer-controls">
+        <AmbientToggle />
         <button className="timer-primary" onClick={onToggle}>
           {running ? <><Pause size={18} weight="fill" /> PAUSE</> : <><Play size={18} weight="fill" /> START</>}
         </button>
