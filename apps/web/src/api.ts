@@ -22,8 +22,25 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}/api${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+const NETWORK_RETRY_DELAYS_MS = [500, 1500, 3000];
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** fetch() that retries idempotent GETs on network failures (TypeError); HTTP errors are never retried. */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const retries = method === "GET" ? NETWORK_RETRY_DELAYS_MS : [];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      if (!(error instanceof TypeError) || attempt >= retries.length) throw error;
+      await sleep(retries[attempt]);
+    }
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
-  const response = await fetch(apiUrl(path), {
+  const response = await fetchWithRetry(apiUrl(path), {
     ...init,
     // Fastify rejects an empty body declared as JSON, so bodiless POST/DELETE calls must omit the header.
     headers: { ...(init?.body !== undefined ? { "content-type": "application/json" } : {}), ...(authenticated && authToken ? { authorization: `Bearer ${authToken}` } : {}), ...init?.headers }
