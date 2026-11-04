@@ -100,7 +100,7 @@ Para empacotamento, CI/CD, deploy no Coolify e recuperação de releases, veja o
 **Pré-requisito:** [Bun](https://bun.com) 1.3+ para dependências e scripts, e Node.js 22+ como runtime da API.
 
 ```sh
-git clone <seu-repositorio>
+git clone https://github.com/daviixs/foucusly.git
 cd pomofocus
 bun install
 bun run dev
