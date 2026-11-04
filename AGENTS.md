@@ -10,7 +10,7 @@ Core product behavior:
 
 - Timer modes are `pomodoro`, `shortBreak`, and `longBreak`, with configurable durations, cycles, alarms, ambient audio, and automatic starts.
 - A completed focus session may increment its task's completed Pomodoros and automatically complete or reorder the task according to the profile settings.
-- Profiles partition all user-owned data. The selected profile id travels in the `x-profile-id` request header; it is not authentication and must not be represented as such.
+- Profiles partition all user-owned data. The profile id comes from a verified Bearer token (`request.profileId`, set in the server preHandler); clients never choose it.
 - Projects can be archived instead of deleted. Archiving detaches its active tasks, while historical sessions retain their recorded project relationship for reporting.
 - Reports summarize focus sessions by day, week, month, or year and expose session detail and project/task rankings.
 - Web Push can notify subscribed browsers when a running timer is due. The application remains usable without push configuration.
@@ -80,7 +80,7 @@ Before handing off a change, run `bun run typecheck`. Run `bun run build` for ch
 ### API and data integrity
 
 - Validate every external request body and query at the route boundary with Zod. Return user-safe errors through the Fastify error handler.
-- Scope every profile-owned query and mutation by `profile_id`. Resolve it from `x-profile-id`, never from client-supplied request bodies.
+- Scope every profile-owned query and mutation by `profile_id`. Resolve it from `request.profileId`, never from client-supplied request bodies.
 - Preserve idempotency for session completion: session ids are UUIDs and duplicate submissions must not increase task counts twice.
 - Keep database evolution backward-compatible. `db.ts` opens existing local files, so add migrations/columns defensively rather than assuming a fresh database.
 - Use prepared statements and transactions for grouped updates, particularly for project archival and timer/session side effects.

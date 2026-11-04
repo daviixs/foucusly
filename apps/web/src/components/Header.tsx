@@ -6,14 +6,12 @@ import {
   SignIn,
   SignOut,
   Trash,
-  User
 } from "@phosphor-icons/react";
 import type { Profile } from "@foucusly/contracts";
 import logo from "../assets/logo.png";
 
 interface HeaderProps {
   profile: Profile | null;
-  onAccount: () => void;
   onLogout: () => void;
   onShortcuts: () => void;
   onDeleteAccount: () => void;
@@ -24,7 +22,6 @@ interface HeaderProps {
 
 export function Header({
   profile,
-  onAccount,
   onLogout,
   onShortcuts,
   onDeleteAccount,
@@ -99,18 +96,6 @@ export function Header({
                   className="profile-menu-item"
                   onClick={() => {
                     setProfileMenuOpen(false);
-                    onAccount();
-                  }}
-                >
-                  <User size={17} weight="fill" />
-                  <span>Account</span>
-                </button>
-
-                <button
-                  role="menuitem"
-                  className="profile-menu-item"
-                  onClick={() => {
-                    setProfileMenuOpen(false);
                     onLogout();
                   }}
                 >
@@ -180,14 +165,6 @@ export function Header({
               </button>
               {profile ? (
                 <>
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onAccount();
-                    }}
-                  >
-                    <User size={16} weight="fill" /> Account
-                  </button>
                   <button
                     onClick={() => {
                       setMenuOpen(false);

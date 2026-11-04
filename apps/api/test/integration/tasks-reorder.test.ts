@@ -1,3 +1,4 @@
+import { authHeader } from "../auth-helper.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "../../src/server.js";
 import { createDatabase, createProfile, type AppDatabase } from "../../src/db.js";
@@ -9,7 +10,7 @@ let owner: string;
 let other: string;
 
 function send(method: string, path: string, body?: unknown, profileId = owner) {
-  const headers: Record<string, string> = { "x-profile-id": profileId };
+  const headers: Record<string, string> = { authorization: authHeader(profileId) };
   const init: Parameters<FastifyInstance["inject"]>[0] = { method, url: path, headers };
   if (body !== undefined) { headers["content-type"] = "application/json"; init.payload = body; }
   return app.inject(init);
@@ -25,7 +26,7 @@ async function createThreeTasks(): Promise<string[]> {
 }
 
 async function orderedTitles(): Promise<string[]> {
-  const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": owner } })).json()) as { tasks: Array<{ title: string; sortOrder: number }> };
+  const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { authorization: authHeader(owner) } })).json()) as { tasks: Array<{ title: string; sortOrder: number }> };
   return bootstrap.tasks.sort((a, b) => a.sortOrder - b.sortOrder).map((task) => task.title);
 }
 
@@ -56,7 +57,7 @@ describe("batch task reordering", () => {
     const foreign = await send("PUT", "/api/tasks/reorder", { order: [ids[2], ids[1], ids[0]] }, other);
     expect(foreign.statusCode).toBe(400);
     expect(await orderedTitles()).toEqual(["First", "Second", "Third"]);
-    const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": other } })).json()) as { tasks: unknown[] };
+    const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { authorization: authHeader(other) } })).json()) as { tasks: unknown[] };
     expect(bootstrap.tasks).toHaveLength(0);
   });
 

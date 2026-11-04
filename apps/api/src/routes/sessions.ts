@@ -37,7 +37,7 @@ function resolveTaskContext(db: AppDatabase, owner: string, taskId?: string | nu
 
 export const sessionRoutes: FastifyPluginAsync<SessionRoutesOptions> = async (app, { db }) => {
   app.post("/api/sessions", { config: { rateLimit: sessionRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const input = sessionInput.parse(request.body);
     const task = resolveTaskContext(db, owner, input.taskId);
     const projectId = input.projectId === undefined ? task?.projectId ?? null : input.projectId;
@@ -96,7 +96,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRoutesOptions> = async (ap
   });
 
   app.post("/api/sessions/manual", { config: { rateLimit: sessionRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const input = manualSessionInput.parse(request.body);
     const started = Date.parse(input.startedAt);
     const ended = Date.parse(input.endedAt);
@@ -116,7 +116,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRoutesOptions> = async (ap
   });
 
   app.patch<{ Params: { id: string } }>("/api/sessions/:id", { config: { rateLimit: sessionRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const input = sessionPatchInput.parse(request.body);
     const current = db.prepare("SELECT * FROM sessions WHERE id=? AND profile_id=?").get(request.params.id, owner) as Record<string, unknown> | undefined;
     if (!current) return reply.code(404).send({ error: "Session not found" });
@@ -139,7 +139,7 @@ export const sessionRoutes: FastifyPluginAsync<SessionRoutesOptions> = async (ap
   });
 
   app.delete<{ Params: { id: string } }>("/api/sessions/:id", { config: { rateLimit: sessionRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const result = db.prepare("DELETE FROM sessions WHERE id=? AND profile_id=?").run(request.params.id, owner);
     if (!result.changes) return reply.code(404).send({ error: "Session not found" });
     return reply.code(204).send();

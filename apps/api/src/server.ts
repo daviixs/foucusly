@@ -6,6 +6,8 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { projectRoutes } from "./routes/projects.js";
 import { profileRoutes } from "./routes/profiles.js";
+import { authRoutes } from "./routes/auth.js";
+import { bearerToken, resolveAuthSecret, verifyToken } from "./auth/index.js";
 import { reportRoutes } from "./routes/reports/index.js";
 import { taskRoutes } from "./routes/tasks.js";
 import { sessionRoutes } from "./routes/sessions.js";
@@ -46,10 +48,15 @@ export function parseCorsOrigins(value: string | undefined): string[] {
 const trustProxy: boolean | string = process.env.TRUST_PROXY === "true" ? true : process.env.TRUST_PROXY?.trim() || false;
 const strictRateLimit = { max: 60, timeWindow: "1 minute" };
 
-export interface ServerOptions { pushSender?: PushSender; /** Overrides CORS_ORIGINS; empty = same-origin only (no CORS headers). */ corsOrigins?: string[]; }
+declare module "fastify" { interface FastifyRequest { profileId: string; } }
+
+const PUBLIC_PATHS = new Set(["/api/health", "/api/version", "/api/auth/login", "/api/auth/register"]);
+
+export interface ServerOptions { pushSender?: PushSender; /** Token signing secret; defaults to AUTH_SECRET. */ authSecret?: string; /** Overrides CORS_ORIGINS; empty = same-origin only (no CORS headers). */ corsOrigins?: string[]; }
 
 export function buildServer(db: AppDatabase, options: ServerOptions = {}): FastifyInstance {
   const corsOrigins = options.corsOrigins ?? parseCorsOrigins(process.env.CORS_ORIGINS);
+  const authSecret = options.authSecret ?? resolveAuthSecret();
   const app = Fastify({ logger: process.env.NODE_ENV !== "test", bodyLimit: 1_000_000, trustProxy });
   app.setErrorHandler((error, _request, reply) => {
     app.log.error(error);
@@ -58,11 +65,16 @@ export function buildServer(db: AppDatabase, options: ServerOptions = {}): Fasti
       .send({ error: error instanceof z.ZodError ? error.issues.map((issue) => issue.message).join("; ") : statusCode < 500 && error instanceof Error ? error.message : "Internal server error" });
   });
 
+  app.decorateRequest("profileId", "");
+  // preHandler (not onRequest) so CORS/rate-limit hooks have already run and 401s carry CORS headers.
   app.addHook("preHandler", async (request, reply) => {
-    if (request.url.startsWith("/api/health") || request.url.startsWith("/api/version") || request.url.startsWith("/api/profiles")) return;
-    const id = request.headers["x-profile-id"];
-    if (typeof id !== "string" || !id) return reply.code(401).send({ error: "Choose a profile to continue" });
-    if (!findProfile(db, id)) return reply.code(404).send({ error: "Profile not found" });
+    if (request.method === "OPTIONS") return;
+    const path = request.url.split("?")[0].replace(/\/+$/, "");
+    if (PUBLIC_PATHS.has(path)) return;
+    const token = bearerToken(request.headers.authorization);
+    const profileId = token ? verifyToken(token, authSecret) : null;
+    if (!profileId || !findProfile(db, profileId)) return reply.code(401).send({ error: "Authentication required" });
+    request.profileId = profileId;
   });
 
   app.get("/api/health", async () => ({ ok: true }));
@@ -71,11 +83,12 @@ export function buildServer(db: AppDatabase, options: ServerOptions = {}): Fasti
     void app.register(cors, {
       origin: corsOrigins,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "x-profile-id"]
+      allowedHeaders: ["Content-Type", "Authorization"]
     });
   }
   void app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute" });
-  app.get("/api/bootstrap", async (request) => readBootstrap(db, request.headers["x-profile-id"] as string));
+  app.get("/api/bootstrap", async (request) => readBootstrap(db, request.profileId));
+  void app.register(authRoutes, { db, secret: authSecret });
   void app.register(profileRoutes, { db });
   void app.register(projectRoutes, { db });
   void app.register(reportRoutes, { db });
@@ -85,7 +98,7 @@ export function buildServer(db: AppDatabase, options: ServerOptions = {}): Fasti
   void app.register(pushRoutes, { db, sender: options.pushSender ?? { async send() { return { ok: false, expired: false, reason: "Push sender is not configured" }; } } });
 
   app.put("/api/settings", { config: { rateLimit: strictRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const input = settingsInput.parse(request.body);
     const current = readSettings(db, owner);
     const next: Settings = normalizeSettings({
@@ -110,7 +123,7 @@ export function buildServer(db: AppDatabase, options: ServerOptions = {}): Fasti
   });
 
   app.put("/api/timer", { config: { rateLimit: strictRateLimit } }, async (request) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const parsed = timerInput.parse(request.body);
     const taskId = parsed.currentSessionTaskId === undefined ? parsed.activeTaskId : parsed.currentSessionTaskId;
     const task = taskId ? db.prepare("SELECT title, project_id AS projectId FROM tasks WHERE id=? AND profile_id=?").get(taskId, owner) as { title: string; projectId: string | null } | undefined : undefined;

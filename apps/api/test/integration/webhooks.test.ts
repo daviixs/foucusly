@@ -1,3 +1,4 @@
+import { authHeader } from "../auth-helper.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { Settings, WebhookEvent } from "@foucusly/contracts";
@@ -16,7 +17,7 @@ function iso(secondsAgo: number) {
 }
 
 function send(method: string, path: string, body?: unknown, profileId = owner) {
-  const headers: Record<string, string> = { "x-profile-id": profileId };
+  const headers: Record<string, string> = { authorization: authHeader(profileId) };
   const init: Parameters<FastifyInstance["inject"]>[0] = { method, url: path, headers };
   if (body !== undefined) { headers["content-type"] = "application/json"; init.payload = body; }
   return app.inject(init);

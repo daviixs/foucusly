@@ -7,7 +7,7 @@ Foucusly is a TypeScript monorepo for a local-first Pomodoro application. It use
 ```text
 ┌─────────────────────────────────── Browser ───────────────────────────────────┐
 │ React + Vite SPA                                                               │
-│ App / panels / dialogs ── api.ts ── fetch("/api/*", x-profile-id)              │
+│ App / panels / dialogs ── api.ts ── fetch("/api/*", Bearer token)              │
 │ live countdown, audio, browser notifications, local profile selection          │
 └─────────────────────────────────┬─────────────────────────────────────────────┘
                                   │
@@ -35,14 +35,14 @@ The frontend development server proxies `/api` to Fastify on port `3001`. In pro
 
 ## Request and profile scope
 
-Profiles are local data partitions, not authenticated accounts. On startup, the web client retrieves the available profiles, restores `foucusly-profile-id` from `localStorage` when possible, and sends the selected id as `x-profile-id` on subsequent scoped requests.
+Profiles are password-protected accounts (scrypt hashes in `profiles.password_hash`). The web client stores the token returned by `/api/auth/login` or `/api/auth/register` in `localStorage` (`focusly-token`) and sends it as `Authorization: Bearer` on every request; on 401 it clears the token and shows the sign-in form. Legacy profiles without a password are claimed by the first successful login with their username.
 
-The API permits only health and profile-management routes without the standard pre-handler guard. Every other route checks that the header exists and refers to a current profile before it performs work. Data queries then include `profile_id`; this second layer is essential, because header validation alone does not prevent an unscoped SQL query from leaking data across local profiles.
+The API permits only health, version and `/api/auth/*` without the pre-handler guard. Every other route requires a valid, unexpired token signed with `AUTH_SECRET` that refers to a current profile before it performs work. Data queries then include `profile_id`; this second layer is essential, because authentication alone does not prevent an unscoped SQL query from leaking data across local profiles.
 
 ```text
-ProfileGate → POST /api/profiles → profile id in localStorage
+AuthGate → POST /api/auth/login|register → token in localStorage (focusly-token)
                                       ↓
-component → api.ts → x-profile-id → Fastify preHandler → profile-scoped SQL
+component → api.ts → Bearer token → Fastify preHandler (verifies token, sets request.profileId) → profile-scoped SQL
 ```
 
 Profile deletion is intentionally guarded by requiring the request header to match the profile id being deleted.
@@ -136,6 +136,7 @@ This scheduler is intentionally in-process. One API process with one SQLite data
 | --- | --- |
 | `PORT`, `HOST` | Fastify listener; defaults to `3001` and `127.0.0.1`. |
 | `DATABASE_PATH` | SQLite database location. |
+| `AUTH_SECRET` | Required in production: HMAC secret for login tokens. |
 | `CORS_ORIGINS` | Optional comma-separated allowlist for cross-origin browser clients. |
 | `TRUST_PROXY` | Enables/configures Fastify proxy trust. |
 | `PUSH_POLL_INTERVAL_MS` | Scheduler interval in milliseconds; defaults to `15000`. |
