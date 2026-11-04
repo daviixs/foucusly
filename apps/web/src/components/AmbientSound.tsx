@@ -6,7 +6,10 @@ const OPTIONS: Array<{ id: AmbientType; label: string }> = [
   { id: "none", label: "None" },
   { id: "white", label: "White" },
   { id: "pink", label: "Pink" },
-  { id: "brown", label: "Brown" }
+  { id: "brown", label: "Brown" },
+  { id: "rain", label: "Rain" },
+  { id: "cafe", label: "Cafe" },
+  { id: "forest", label: "Forest" }
 ];
 
 /** "Ambient sound" block for the Settings dialog. Changes apply (and persist) immediately. */
