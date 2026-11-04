@@ -147,6 +147,37 @@ export function App() {
     return () => { cancelled = true; };
   }, [restoreProfile]);
 
+  // While the connection error screen is visible, retry quietly in the background.
+  const retryingRef = useRef(false);
+  const retryConnection = useCallback(async () => {
+    if (retryingRef.current) return;
+    if (!getAuthToken()) { setLoadingError(""); return; }
+    retryingRef.current = true;
+    try {
+      const loaded = await loadData();
+      setProfile(loaded.profile);
+      setLoadingError("");
+    } catch {
+      if (!getAuthToken()) setLoadingError("");
+    } finally {
+      retryingRef.current = false;
+    }
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!loadingError) return;
+    const interval = window.setInterval(() => { void retryConnection(); }, 5000);
+    const onOnline = () => { void retryConnection(); };
+    const onVisible = () => { if (document.visibilityState === "visible") void retryConnection(); };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [loadingError, retryConnection]);
+
   const authenticate = async (mode: "login" | "register", username: string, password: string) => {
     const result = mode === "register" ? await api.register(username, password) : await api.login(username, password);
     setAuthToken(result.token);
@@ -338,7 +369,7 @@ export function App() {
   };
   const setActiveTask = (id: string) => { if (timer) void persistTimer({ ...timer, activeTaskId: id }); };
 
-  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); setRestoringProfile(Boolean(getAuthToken())); void restoreProfile(); }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
+  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Can't reach Focusly right now</h1><p>Check your connection. Retrying automatically…</p><button className="button-dark" type="button" onClick={() => { void retryConnection(); }}>Try again</button></div></main>;
   if (restoringProfile || (profile && (!data || !timer))) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
 
   const shownData = data ?? { tasks: [], projects: [], settings: DEFAULT_SETTINGS };
