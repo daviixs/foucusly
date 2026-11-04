@@ -6,7 +6,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { projectRoutes } from "./routes/projects.js";
 import { profileRoutes } from "./routes/profiles.js";
-import { authRoutes } from "./routes/auth.js";
+import { authRoutes, resolveSignupOptions, type SignupOptions } from "./routes/auth.js";
 import { bearerToken, resolveAuthSecret, verifyToken } from "./auth/index.js";
 import { reportRoutes } from "./routes/reports/index.js";
 import { taskRoutes } from "./routes/tasks.js";
@@ -45,19 +45,29 @@ const timerInput = z.object({
 export function parseCorsOrigins(value: string | undefined): string[] {
   return (value ?? "").split(",").map((origin) => origin.trim().replace(/\/+$/, "")).filter(Boolean);
 }
-const trustProxy: boolean | string = process.env.TRUST_PROXY === "true" ? true : process.env.TRUST_PROXY?.trim() || false;
+/**
+ * Fastify `trustProxy` from TRUST_PROXY: "true"/"false" or a comma-separated IP/CIDR list of trusted proxies.
+ * Unset defaults to true in production (the API runs behind Coolify/Traefik) so request.ip is the real client IP.
+ */
+export function resolveTrustProxy(value = process.env.TRUST_PROXY, nodeEnv = process.env.NODE_ENV): boolean | string {
+  const raw = value?.trim();
+  if (!raw) return nodeEnv === "production";
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return raw;
+}
 const strictRateLimit = { max: 60, timeWindow: "1 minute" };
 
 declare module "fastify" { interface FastifyRequest { profileId: string; } }
 
 const PUBLIC_PATHS = new Set(["/api/health", "/api/version", "/api/auth/login", "/api/auth/register"]);
 
-export interface ServerOptions { pushSender?: PushSender; /** Token signing secret; defaults to AUTH_SECRET. */ authSecret?: string; /** Overrides CORS_ORIGINS; empty = same-origin only (no CORS headers). */ corsOrigins?: string[]; }
+export interface ServerOptions { pushSender?: PushSender; /** Token signing secret; defaults to AUTH_SECRET. */ authSecret?: string; /** Overrides CORS_ORIGINS; empty = same-origin only (no CORS headers). */ corsOrigins?: string[]; /** Overrides TRUST_PROXY. */ trustProxy?: boolean | string; /** Overrides SIGNUP_LIMIT_PER_IP / SIGNUP_WINDOW_HOURS / TURNSTILE_SECRET_KEY. */ signup?: Partial<SignupOptions>; }
 
 export function buildServer(db: AppDatabase, options: ServerOptions = {}): FastifyInstance {
   const corsOrigins = options.corsOrigins ?? parseCorsOrigins(process.env.CORS_ORIGINS);
   const authSecret = options.authSecret ?? resolveAuthSecret();
-  const app = Fastify({ logger: process.env.NODE_ENV !== "test", bodyLimit: 1_000_000, trustProxy });
+  const app = Fastify({ logger: process.env.NODE_ENV !== "test", bodyLimit: 1_000_000, trustProxy: options.trustProxy ?? resolveTrustProxy() });
   app.setErrorHandler((error, _request, reply) => {
     app.log.error(error);
     const statusCode = error instanceof z.ZodError ? 400 : error instanceof Error && "statusCode" in error && typeof error.statusCode === "number" ? error.statusCode : 500;
@@ -88,7 +98,7 @@ export function buildServer(db: AppDatabase, options: ServerOptions = {}): Fasti
   }
   void app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute" });
   app.get("/api/bootstrap", async (request) => readBootstrap(db, request.profileId));
-  void app.register(authRoutes, { db, secret: authSecret });
+  void app.register(authRoutes, { db, secret: authSecret, signup: { ...resolveSignupOptions(authSecret), ...options.signup } });
   void app.register(profileRoutes, { db });
   void app.register(projectRoutes, { db });
   void app.register(reportRoutes, { db });

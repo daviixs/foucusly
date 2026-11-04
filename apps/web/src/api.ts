@@ -13,6 +13,11 @@ export function setAuthToken(token: string | null): void {
 /** Called when the API answers 401 for an authenticated request (expired/invalid token). */
 export function setUnauthorizedHandler(handler: (() => void) | null): void { onUnauthorized = handler; }
 
+/** HTTP error from the API, keeping the status code so the UI can tailor messages (e.g. 429). */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message); this.name = "ApiError"; }
+}
+
 export interface AuthResult { token: string; profile: Profile }
 /** Base URL of the API. Empty string = same origin (dev uses the Vite proxy for /api). */
 export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/+$/, "");
@@ -51,7 +56,7 @@ async function request<T>(path: string, init?: RequestInit, authenticated = true
   }
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(body?.error ?? `Request failed (${response.status})`);
+    throw new ApiError(body?.error ?? `Request failed (${response.status})`, response.status);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -59,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit, authenticated = true
 
 export const api = {
   login: (username: string, password: string) => request<AuthResult>("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
-  register: (username: string, password: string) => request<AuthResult>("/auth/register", { method: "POST", body: JSON.stringify({ username, password }) }, false),
+  register: (username: string, password: string, turnstileToken?: string) => request<AuthResult>("/auth/register", { method: "POST", body: JSON.stringify({ username, password, ...(turnstileToken ? { turnstileToken } : {}) }) }, false),
   deleteProfile: (id: string) => request<void>(`/profiles/${id}`, { method: "DELETE" }),
   bootstrap: () => request<BootstrapData>("/bootstrap"),
   saveSettings: (settings: Settings) => request<Settings>("/settings", { method: "PUT", body: JSON.stringify(settings) }),

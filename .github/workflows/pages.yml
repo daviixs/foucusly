@@ -26,6 +26,7 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_BASE: ${{ vars.VITE_BASE || '/' }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
         run: bun run build
       - uses: actions/upload-pages-artifact@v3
         with:

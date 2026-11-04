@@ -97,6 +97,8 @@ export function createDatabase(path = process.env.DATABASE_PATH ?? "data/foucusl
       PRIMARY KEY (profile_id, ends_at)
     );
     CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS signup_ips (ip_hash TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS signup_ips_idx ON signup_ips(ip_hash, created_at);
   `);
   db.exec("CREATE INDEX IF NOT EXISTS sessions_period_idx ON sessions(mode, ended_at)");
   db.exec("CREATE INDEX IF NOT EXISTS sessions_project_idx ON sessions(project_id, ended_at)");

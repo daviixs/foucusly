@@ -178,8 +178,8 @@ export function App() {
     };
   }, [loadingError, retryConnection]);
 
-  const authenticate = async (mode: "login" | "register", username: string, password: string) => {
-    const result = mode === "register" ? await api.register(username, password) : await api.login(username, password);
+  const authenticate = async (mode: "login" | "register", username: string, password: string, turnstileToken?: string) => {
+    const result = mode === "register" ? await api.register(username, password, turnstileToken) : await api.login(username, password);
     setAuthToken(result.token);
     await startSession();
     notify(mode === "register" ? `Account “${result.profile.username}” created.` : `Signed in as “${result.profile.username}”.`);

@@ -133,7 +133,7 @@ DATABASE_PATH=/caminho/para/foucusly.sqlite bun run dev:api
 4. Configure esse servidor para encaminhar `/api` à API Fastify.
 5. Faça backup de `data/foucusly.sqlite`: ele é a fonte de verdade dos dados da instalação.
 
-As variáveis de ambiente mais relevantes são `PORT`, `HOST`, `DATABASE_PATH`, `AUTH_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY` e `PUSH_POLL_INTERVAL_MS`. As chaves VAPID para Web Push podem ser configuradas ou persistidas localmente pela API.
+As variáveis de ambiente mais relevantes são `PORT`, `HOST`, `DATABASE_PATH`, `AUTH_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY`, `SIGNUP_LIMIT_PER_IP`, `SIGNUP_WINDOW_HOURS`, `TURNSTILE_SECRET_KEY` e `PUSH_POLL_INTERVAL_MS`. As chaves VAPID para Web Push podem ser configuradas ou persistidas localmente pela API.
 
 ### Variáveis de ambiente
 
@@ -143,10 +143,18 @@ As variáveis de ambiente mais relevantes são `PORT`, `HOST`, `DATABASE_PATH`, 
 | `VITE_BASE` | build do web | Caminho base do site. Padrão `/`. No Pages de projeto use `/foucusly/`. |
 | `AUTH_SECRET` | API | **Obrigatória em produção** (a API não sobe sem ela com `NODE_ENV=production`). Segredo HMAC (≥ 32 caracteres) para assinar os tokens de login (validade 30 dias). Gere com `openssl rand -hex 32`. Trocar o valor desloga todo mundo. |
 | `CORS_ORIGINS` | API | Origens permitidas, separadas por vírgula (ex.: `https://daviixs.github.io`). Vazia = sem CORS (apenas mesma origem). Permite os headers `Content-Type`, `Authorization` e os métodos `GET POST PUT PATCH DELETE OPTIONS`. |
+| `TRUST_PROXY` | API | `trustProxy` do Fastify: `true`/`false` ou lista de IPs/CIDRs dos proxies confiáveis. Vazia = `true` em produção (a API roda atrás do Traefik/Coolify), `false` fora dela. Necessário para `request.ip` ser o IP real do cliente. |
+| `SIGNUP_LIMIT_PER_IP` | API | Máximo de contas criadas com sucesso por IP dentro da janela. Padrão `1`; `0` desativa. |
+| `SIGNUP_WINDOW_HOURS` | API | Janela do limite acima, em horas. Padrão `24`. |
+| `SIGNUP_IP_SALT` | API | Opcional. Salt do hash SHA-256 dos IPs (padrão: `AUTH_SECRET`). IPs nunca são gravados em texto puro. |
+| `TURNSTILE_SECRET_KEY` | API | Opcional. Chave secreta do Cloudflare Turnstile; quando definida, o cadastro exige `turnstileToken` válido (falha → 400 `Captcha verification failed`). |
+| `VITE_TURNSTILE_SITE_KEY` | build do web | Opcional. Site key pública do Turnstile; exibe o widget em "Create account". No Pages vem de `vars.VITE_TURNSTILE_SITE_KEY`. |
 
 ## Autenticação
 
 Cada perfil tem usuário e senha. `POST /api/auth/register` e `POST /api/auth/login` (`{ username, password }`, senha ≥ 8 caracteres) devolvem `{ token, profile }`. O token (HMAC-SHA256, estilo JWT, 30 dias) vai em `Authorization: Bearer <token>` em todas as chamadas; só `/api/health`, `/api/version` e `/api/auth/*` são públicas. Senhas são guardadas com scrypt (salt aleatório). Não existe mais listagem pública de perfis.
+
+**Limites de cadastro:** login aceita 10 tentativas/min por IP; cadastro aceita 3 tentativas/hora por IP e no máximo `SIGNUP_LIMIT_PER_IP` (padrão 1) conta criada com sucesso por IP a cada `SIGNUP_WINDOW_HOURS` (padrão 24 h), persistido no SQLite (tabela `signup_ips`, só hash do IP). Acima do limite a API responde 429 `Too many accounts created from this network. Try again later.` Com `TURNSTILE_SECRET_KEY`/`VITE_TURNSTILE_SITE_KEY` o cadastro também exige o captcha do Cloudflare Turnstile.
 
 **Perfis antigos (sem senha):** o primeiro login com o nome de usuário de um perfil antigo define a senha informada e "reivindica" o perfil. Depois disso só essa senha funciona. Recomenda-se que os donos façam login logo após o deploy.
 

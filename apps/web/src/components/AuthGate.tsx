@@ -1,8 +1,27 @@
 import { UserCircle } from "@phosphor-icons/react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
+import { ApiError } from "../api";
+import { TURNSTILE_SITE_KEY, Turnstile, type TurnstileHandle } from "./Turnstile";
 
 interface Props {
-  onSubmit: (mode: "login" | "register", username: string, password: string) => Promise<void>;
+  onSubmit: (mode: "login" | "register", username: string, password: string, turnstileToken?: string) => Promise<void>;
+}
+
+const SIGNUP_LIMIT_MESSAGE = "Too many accounts created from this network. Try again later.";
+
+/** Turns API errors into friendly copy, especially rate limits (429) and captcha failures. */
+export function authErrorMessage(caught: unknown, registering: boolean): string {
+  const message = caught instanceof Error ? caught.message : "";
+  if (caught instanceof ApiError && caught.status === 429) {
+    if (message === SIGNUP_LIMIT_MESSAGE)
+      return "Too many accounts were created from this network. Please try again later (in about a day), or sign in to an existing account.";
+    return registering
+      ? "Too many sign-up attempts. Please wait a while and try again."
+      : "Too many sign-in attempts. Please wait a minute and try again.";
+  }
+  if (caught instanceof ApiError && caught.status === 400 && /captcha/i.test(message))
+    return "Captcha verification failed. Please complete the check again.";
+  return message || "Something went wrong";
 }
 
 export function AuthGate({ onSubmit }: Props) {
@@ -11,8 +30,14 @@ export function AuthGate({ onSubmit }: Props) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstile = useRef<TurnstileHandle>(null);
   const registering = mode === "register";
-  const valid = username.trim().length >= 2 && password.length >= (registering ? 8 : 1);
+  const captchaRequired = registering && Boolean(TURNSTILE_SITE_KEY);
+  const valid =
+    username.trim().length >= 2 &&
+    password.length >= (registering ? 8 : 1) &&
+    (!captchaRequired || Boolean(turnstileToken));
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -20,10 +45,12 @@ export function AuthGate({ onSubmit }: Props) {
     setBusy(true);
     setError("");
     try {
-      await onSubmit(mode, username.trim(), password);
+      await onSubmit(mode, username.trim(), password, captchaRequired ? turnstileToken : undefined);
       setPassword("");
     } catch (caught) {
-      setError((caught as Error).message || "Something went wrong");
+      setError(authErrorMessage(caught, registering));
+      // Turnstile tokens are single-use: get a fresh one for the next attempt.
+      if (captchaRequired) turnstile.current?.reset();
     } finally {
       setBusy(false);
     }
@@ -82,6 +109,9 @@ export function AuthGate({ onSubmit }: Props) {
                 disabled={busy}
               />
             </div>
+            {captchaRequired && (
+              <Turnstile ref={turnstile} siteKey={TURNSTILE_SITE_KEY} onToken={setTurnstileToken} onError={setError} />
+            )}
             {error && (
               <small className="profile-error" role="alert">
                 {error}
@@ -95,6 +125,7 @@ export function AuthGate({ onSubmit }: Props) {
                 onClick={() => {
                   setMode(registering ? "login" : "register");
                   setError("");
+                  setTurnstileToken("");
                 }}
               >
                 {registering ? "I have an account" : "Create account"}
