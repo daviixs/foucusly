@@ -135,10 +135,6 @@ DATABASE_PATH=/caminho/para/foucusly.sqlite bun run dev:api
 
 As variáveis de ambiente mais relevantes são `PORT`, `HOST`, `DATABASE_PATH`, `CORS_ORIGINS`, `TRUST_PROXY` e `PUSH_POLL_INTERVAL_MS`. As chaves VAPID para Web Push podem ser configuradas ou persistidas localmente pela API.
 
-## GitHub Pages (front-end estático)
-
-O front-end (`apps/web`) pode ser publicado no GitHub Pages pelo workflow `.github/workflows/pages.yml`, que roda a cada push em `main` e também manualmente (`workflow_dispatch`). A API continua hospedada separadamente.
-
 ### Variáveis de ambiente
 
 | Variável | Onde | Descrição |
@@ -146,28 +142,6 @@ O front-end (`apps/web`) pode ser publicado no GitHub Pages pelo workflow `.gith
 | `VITE_API_URL` | build do web | URL pública da API, sem `/api` no final (ex.: `https://api.seudominio.com`). Vazia = mesma origem (comportamento atual; em dev o proxy do Vite encaminha `/api` para `localhost:3001`). |
 | `VITE_BASE` | build do web | Caminho base do site. Padrão `/`. No Pages de projeto use `/foucusly/`. |
 | `CORS_ORIGINS` | API | Origens permitidas, separadas por vírgula (ex.: `https://daviixs.github.io`). Vazia = sem CORS (apenas mesma origem). Permite os headers `Content-Type`, `Authorization`, `x-profile-id` e os métodos `GET POST PUT PATCH DELETE OPTIONS`. |
-
-### Habilitando o Pages
-
-1. Em **Settings → Pages**, defina **Source: GitHub Actions**.
-2. Em **Settings → Secrets and variables → Actions → Variables**, crie as *repository variables*:
-   - `VITE_API_URL` = URL pública da API (ex.: `https://api.seudominio.com`)
-   - `VITE_BASE` = `/foucusly/`
-3. Na API, defina `CORS_ORIGINS=https://daviixs.github.io` (origem sem caminho).
-4. Faça push em `main` ou rode o workflow **GitHub Pages** manualmente.
-
-Exemplo: com `VITE_BASE=/foucusly/` o site fica em https://daviixs.github.io/foucusly/. O build gera `dist/404.html` (cópia do `index.html`) para que rotas como `/foucusly/app` funcionem no Pages, e o service worker é registrado em `${base}sw.js`.
-
-Teste local: `VITE_BASE=/foucusly/ VITE_API_URL=http://localhost:3001 bun run --filter @foucusly/web build`.
-
-### Domínio próprio (focusly.js.org)
-
-Ainda **não** há arquivo `CNAME` no repositório. Quando o pedido no js.org for aprovado:
-
-1. Crie `apps/web/public/CNAME` contendo apenas `focusly.js.org` (o Vite copia para `dist/`).
-2. Altere a variável `VITE_BASE` para `/` (o site passa a ser servido na raiz do domínio).
-3. Atualize `CORS_ORIGINS` na API para incluir `https://focusly.js.org`.
-4. Em **Settings → Pages**, confirme o domínio customizado e ative **Enforce HTTPS**.
 
 ## Webhooks
 
@@ -183,29 +157,13 @@ Eventos ao vivo: `session.finished` (somente insert novo em `POST /api/sessions`
 
 Corpo: `{ event, timestamp, profileId, data }`. `session.finished` traz (estilo Pomofocus) `type` (`focus`/`short-break`/`long-break`), `round`, `task`, `project`, `session_start`, `session_end`, `seconds`, além de `session_id`, `task_id` e `project_id`. Com token configurado é enviado `Authorization: Bearer <token>`. `task.completed` traz `task_id`, `task_title`, `project_id`, `project_name`, `estimated_pomos` e `completed_pomos`.
 
-### Zapier Catch Hook
-
-1. No Zapier, crie um Zap com **Webhooks by Zapier → Catch Hook** e copie a URL.
-2. No Foucusly, cole a URL em **Webhook URL**, marque **Session finished** e/ou **Task completed**, ligue **Enabled** e clique em **OK**.
-3. Clique em **Test**. No Zapier, use **Test trigger** para ver o `ping`.
-4. Mapeie `event`, `data.task`, `data.seconds` e `data.project` nos passos seguintes.
-
-O Catch Hook não valida o HMAC. Deixe o segredo vazio, a menos que o destino saiba conferir `X-Foucusly-Signature`.
-
 ## Roadmap
 
 O Foucusly já é útil como aplicação local. As próximas evoluções devem preservar essa simplicidade enquanto abrem portas para fluxos conectados:
 
+- [x] **Webhooks de saída** — `session.finished` e `task.completed` para uma URL do perfil, com ping de teste. Sessão iniciada, pausa, fila de entregas e vários destinos ficam para depois.
+- [x] **Relatórios avançados** — metas, tendências, comparações de períodos e insights de hábitos.
 - [ ] **Autenticação e contas** — login seguro, sessões e separação entre identidade e perfis locais.
 - [ ] **Sincronização entre dispositivos** — manter timer, tarefas e histórico consistentes em mais de um dispositivo.
-- [x] **Webhooks de saída** — `session.finished` e `task.completed` para uma URL do perfil, com ping de teste. Sessão iniciada, pausa, fila de entregas e vários destinos ficam para depois.
 - [ ] **Integrações** — conectar projetos e tarefas a ferramentas como calendário, Notion, Todoist ou Slack.
 - [ ] **Exportação e backup guiado** — exportar sessões, relatórios e dados do usuário de forma simples.
-- [ ] **PWA/offline aprimorado** — instalação no dispositivo e uma experiência resiliente sem conexão.
-- [ ] **Relatórios avançados** — metas, tendências, comparações de períodos e insights de hábitos.
-
-## Princípios
-
-> **Foco sem atrito. Dados sob seu controle. Métricas que representam trabalho real.**
-
-Foucusly não tenta ser uma plataforma de produtividade inchada. A ideia é manter o ciclo essencial — decidir, focar, pausar e aprender com o histórico — rápido e confiável.
