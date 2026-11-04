@@ -165,3 +165,6 @@
 .webhook-actions .device-button{padding:0 12px}
 .webhook-error{margin:0;color:#9f4040;font-size:12px}
 .section-dialog .webhook-field input,.section-dialog .webhook-actions .device-button{border-color:rgba(95,128,145,.24);border-radius:7px;background:rgba(255,255,255,.5)}
+.timer-minutes-edit{padding:0;border:0;background:none;color:inherit;font:inherit;letter-spacing:inherit;font-variant-numeric:inherit;cursor:text;border-radius:4px;text-decoration:underline transparent 3px;text-underline-offset:10px;transition:text-decoration-color .15s}
+.timer-minutes-edit:hover,.timer-minutes-edit:focus-visible{text-decoration-color:#ffffff80}
+.timer-minutes-input{min-width:2ch;padding:0;border:0;border-bottom:3px solid #ffffffa0;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;font-variant-numeric:tabular-nums;text-align:right;outline:none;box-sizing:content-box}
