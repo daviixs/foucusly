@@ -69,6 +69,7 @@ export function App() {
   const [data, setData] = useState<BootstrapData | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [restoringProfile, setRestoringProfile] = useState(() => Boolean(window.localStorage.getItem("foucusly-profile-id")));
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [profileCreateMode, setProfileCreateMode] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -114,17 +115,28 @@ export function App() {
     catch (error) { setLoadingError((error as Error).message); }
   }, [loadData]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void api.profiles().then(async (available) => {
-      if (cancelled) return;
+  const restoreProfile = useCallback(async (isCancelled: () => boolean = () => false) => {
+    try {
+      const available = await api.profiles();
+      if (isCancelled()) return;
       setProfiles(available);
       const savedId = window.localStorage.getItem("foucusly-profile-id");
       const savedProfile = available.find((item) => item.id === savedId);
       if (savedProfile) await activateProfile(savedProfile);
-    }).catch((error: Error) => { if (!cancelled) setLoadingError(error.message); });
-    return () => { cancelled = true; };
+      else if (savedId) window.localStorage.removeItem("foucusly-profile-id");
+    } catch (error) {
+      // Network/API failure: keep the saved profile id and show retry instead of the profile screen.
+      if (!isCancelled()) setLoadingError((error as Error).message);
+    } finally {
+      if (!isCancelled()) setRestoringProfile(false);
+    }
   }, [activateProfile]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void restoreProfile(() => cancelled);
+    return () => { cancelled = true; };
+  }, [restoreProfile]);
 
   const createLocalProfile = async (username: string) => {
     const created = await api.createProfile(username);
@@ -342,8 +354,8 @@ export function App() {
   };
   const setActiveTask = (id: string) => { if (timer) void persistTimer({ ...timer, activeTaskId: id }); };
 
-  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else void api.profiles().then(setProfiles).catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
-  if (profile && (!data || !timer)) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
+  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else { setRestoringProfile(Boolean(window.localStorage.getItem("foucusly-profile-id"))); void restoreProfile(); } }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
+  if (restoringProfile || (profile && (!data || !timer))) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
 
   const shownData = data ?? { tasks: [], projects: [], settings: DEFAULT_SETTINGS };
   const shownTimer = timer ?? freshTimer(DEFAULT_SETTINGS, "pomodoro", null, 0);
