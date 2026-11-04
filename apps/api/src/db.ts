@@ -72,6 +72,8 @@ export function createDatabase(path = process.env.DATABASE_PATH ?? "data/foucusl
       project_id TEXT
     );
   `);
+  // Nullable: legacy profiles have no password until claimed on first login.
+  ensureColumn(db, "profiles", "password_hash", "TEXT");
   migrateSingletonTable(db, "settings");
   migrateSingletonTable(db, "timer");
   for (const table of ["projects", "tasks", "sessions", "settings", "timer"] as const) {
@@ -117,16 +119,12 @@ export function createDatabase(path = process.env.DATABASE_PATH ?? "data/foucusl
 
 export type AppDatabase = ReturnType<typeof createDatabase>;
 
-export function listProfiles(db: AppDatabase): Profile[] {
-  return db.prepare("SELECT id, username, created_at AS createdAt FROM profiles ORDER BY created_at, username COLLATE NOCASE").all() as Profile[];
-}
-
-export function createProfile(db: AppDatabase, username: string): Profile {
+export function createProfile(db: AppDatabase, username: string, passwordHash: string | null = null): Profile {
   const id = randomUUID();
   const createdAt = new Date().toISOString();
   const create = db.transaction(() => {
     const existing = db.prepare("SELECT COUNT(*) AS count FROM profiles").get() as { count: number };
-    db.prepare("INSERT INTO profiles (id, username, created_at) VALUES (?, ?, ?)").run(id, username, createdAt);
+    db.prepare("INSERT INTO profiles (id, username, created_at, password_hash) VALUES (?, ?, ?, ?)").run(id, username, createdAt, passwordHash);
     if (existing.count === 0) {
       for (const table of ["projects", "tasks", "sessions", "settings", "timer"] as const) {
         db.prepare(`UPDATE ${table} SET profile_id = ? WHERE profile_id IS NULL`).run(id);
@@ -199,7 +197,8 @@ export function upsertPushSubscription(db: AppDatabase, profileId: string, endpo
   return { endpoint, profileId, subscription: JSON.parse(subscription) as unknown, createdAt };
 }
 
-export function deletePushSubscription(db: AppDatabase, endpoint: string): boolean {
+export function deletePushSubscription(db: AppDatabase, endpoint: string, profileId?: string): boolean {
+  if (profileId) return db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ? AND profile_id = ?").run(endpoint, profileId).changes > 0;
   return db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").run(endpoint).changes > 0;
 }
 

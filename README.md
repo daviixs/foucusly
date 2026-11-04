@@ -63,7 +63,7 @@ Quando uma sessão de foco termina, o Foucusly registra um histórico idempotent
 
 ```text
 React + Vite (apps/web)
-        │  /api + x-profile-id
+        │  /api + Authorization: Bearer
         ▼
 Fastify + Zod (apps/api)
         │
@@ -133,7 +133,7 @@ DATABASE_PATH=/caminho/para/foucusly.sqlite bun run dev:api
 4. Configure esse servidor para encaminhar `/api` à API Fastify.
 5. Faça backup de `data/foucusly.sqlite`: ele é a fonte de verdade dos dados da instalação.
 
-As variáveis de ambiente mais relevantes são `PORT`, `HOST`, `DATABASE_PATH`, `CORS_ORIGINS`, `TRUST_PROXY` e `PUSH_POLL_INTERVAL_MS`. As chaves VAPID para Web Push podem ser configuradas ou persistidas localmente pela API.
+As variáveis de ambiente mais relevantes são `PORT`, `HOST`, `DATABASE_PATH`, `AUTH_SECRET`, `CORS_ORIGINS`, `TRUST_PROXY` e `PUSH_POLL_INTERVAL_MS`. As chaves VAPID para Web Push podem ser configuradas ou persistidas localmente pela API.
 
 ### Variáveis de ambiente
 
@@ -141,7 +141,14 @@ As variáveis de ambiente mais relevantes são `PORT`, `HOST`, `DATABASE_PATH`, 
 | --- | --- | --- |
 | `VITE_API_URL` | build do web | URL pública da API, sem `/api` no final (ex.: `https://api.seudominio.com`). Vazia = mesma origem (comportamento atual; em dev o proxy do Vite encaminha `/api` para `localhost:3001`). |
 | `VITE_BASE` | build do web | Caminho base do site. Padrão `/`. No Pages de projeto use `/foucusly/`. |
-| `CORS_ORIGINS` | API | Origens permitidas, separadas por vírgula (ex.: `https://daviixs.github.io`). Vazia = sem CORS (apenas mesma origem). Permite os headers `Content-Type`, `Authorization`, `x-profile-id` e os métodos `GET POST PUT PATCH DELETE OPTIONS`. |
+| `AUTH_SECRET` | API | **Obrigatória em produção** (a API não sobe sem ela com `NODE_ENV=production`). Segredo HMAC (≥ 32 caracteres) para assinar os tokens de login (validade 30 dias). Gere com `openssl rand -hex 32`. Trocar o valor desloga todo mundo. |
+| `CORS_ORIGINS` | API | Origens permitidas, separadas por vírgula (ex.: `https://daviixs.github.io`). Vazia = sem CORS (apenas mesma origem). Permite os headers `Content-Type`, `Authorization` e os métodos `GET POST PUT PATCH DELETE OPTIONS`. |
+
+## Autenticação
+
+Cada perfil tem usuário e senha. `POST /api/auth/register` e `POST /api/auth/login` (`{ username, password }`, senha ≥ 8 caracteres) devolvem `{ token, profile }`. O token (HMAC-SHA256, estilo JWT, 30 dias) vai em `Authorization: Bearer <token>` em todas as chamadas; só `/api/health`, `/api/version` e `/api/auth/*` são públicas. Senhas são guardadas com scrypt (salt aleatório). Não existe mais listagem pública de perfis.
+
+**Perfis antigos (sem senha):** o primeiro login com o nome de usuário de um perfil antigo define a senha informada e "reivindica" o perfil. Depois disso só essa senha funciona. Recomenda-se que os donos façam login logo após o deploy.
 
 ## Webhooks
 

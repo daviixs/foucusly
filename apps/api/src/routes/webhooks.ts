@@ -15,7 +15,7 @@ const webhookRateLimit = { max: 30, timeWindow: "1 minute" };
 
 export const webhookRoutes: FastifyPluginAsync<WebhookRoutesOptions> = async (app, { db }) => {
   app.post("/api/webhooks/test", { config: { rateLimit: webhookRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const input = testInput.parse(request.body ?? {});
     const outcome = await runWebhookTest(db, owner, input);
     return reply.code(outcome.statusCode).send(outcome.body);

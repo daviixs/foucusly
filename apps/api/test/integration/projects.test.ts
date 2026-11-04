@@ -1,3 +1,4 @@
+import { authHeader } from "../auth-helper.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "../../src/server.js";
 import { createDatabase, createProfile, type AppDatabase } from "../../src/db.js";
@@ -9,7 +10,7 @@ let owner: string;
 let other: string;
 
 function send(method: string, path: string, body?: unknown, profileId = owner) {
-  const headers: Record<string, string> = { "x-profile-id": profileId };
+  const headers: Record<string, string> = { authorization: authHeader(profileId) };
   const init: Parameters<FastifyInstance["inject"]>[0] = { method, url: path, headers };
   if (body !== undefined) { headers["content-type"] = "application/json"; init.payload = body; }
   return app.inject(init);
@@ -55,9 +56,9 @@ describe("archived project listing, restore and visual attributes", () => {
     const task = (await (await send("POST", "/api/tasks", { title: "Pick up", projectId: project.id })).json()) as { id: string };
     await send("POST", "/api/sessions/manual", { startedAt: new Date(Date.now() - 900_000).toISOString(), endedAt: new Date().toISOString(), projectId: project.id, taskTitle: "Focus" });
     await send("DELETE", `/api/projects/${project.id}`);
-    const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": owner } })).json()) as { tasks: Array<{ projectId: string | null }> };
+    const bootstrap = (await (await app.inject({ method: "GET", url: "/api/bootstrap", headers: { authorization: authHeader(owner) } })).json()) as { tasks: Array<{ projectId: string | null }> };
     expect(bootstrap.tasks.find((row) => row.id === task.id)?.projectId).toBeNull();
-    const detail = await app.inject({ method: "GET", url: "/api/reports/detail?period=week", headers: { "x-profile-id": owner } });
+    const detail = await app.inject({ method: "GET", url: "/api/reports/detail?period=week", headers: { authorization: authHeader(owner) } });
     const sessions = (detail.json() as { sessions: Array<{ projectId: string | null }> }).sessions;
     expect(sessions[0]?.projectId).toBe(project.id);
   });

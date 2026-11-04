@@ -4,7 +4,9 @@ import type { AppDatabase } from "../../db.js";
 import { getReportRanking } from "../../services/reporting.js";
 import { parseReportQuery } from "../report-query.js";
 
-interface Options { db: AppDatabase; }
+interface Options {
+  db: AppDatabase;
+}
 const rankingQuerySchema = z.object({ by: z.enum(["user", "project", "task"]).default("user") });
 
 export const reportRankingRoutes: FastifyPluginAsync<Options> = async (app, { db }) => {
@@ -12,6 +14,6 @@ export const reportRankingRoutes: FastifyPluginAsync<Options> = async (app, { db
     const query = request.query as Record<string, unknown>;
     const reportQuery = parseReportQuery(query);
     const { by } = rankingQuerySchema.parse(query);
-    return { by, entries: getReportRanking(db, request.headers["x-profile-id"] as string, reportQuery, by) };
+    return { by, entries: getReportRanking(db, request.profileId, reportQuery, by) };
   });
 };

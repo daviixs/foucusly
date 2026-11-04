@@ -1,3 +1,4 @@
+import { authHeader } from "../auth-helper.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { RankingEntry } from "@foucusly/contracts";
@@ -16,13 +17,13 @@ function today() {
 }
 
 async function focus(profileId: string, id: string, seconds: number, projectId: string | null = null) {
-  const response = await app.inject({ method: "POST", url: "/api/sessions", headers: { "x-profile-id": profileId, "content-type": "application/json" },
+  const response = await app.inject({ method: "POST", url: "/api/sessions", headers: { authorization: authHeader(profileId), "content-type": "application/json" },
     payload: { id: UUID(id), mode: "pomodoro", startedAt: iso(seconds + 5), endedAt: iso(5), durationSeconds: seconds, taskId: null, projectId } });
   expect(response.statusCode).toBe(201);
 }
 
 async function ranking(profileId: string, by?: string) {
-  const response = await app.inject({ method: "GET", url: `/api/reports/ranking?period=year&date=${today()}${by ? `&by=${by}` : ""}`, headers: { "x-profile-id": profileId } });
+  const response = await app.inject({ method: "GET", url: `/api/reports/ranking?period=year&date=${today()}${by ? `&by=${by}` : ""}`, headers: { authorization: authHeader(profileId) } });
   expect(response.statusCode).toBe(200);
   return response.json() as { by: string; entries: RankingEntry[] };
 }

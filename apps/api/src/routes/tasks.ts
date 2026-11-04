@@ -31,7 +31,7 @@ function taskBelongsToOwner(db: AppDatabase, projectId: string, owner: string): 
 
 export const taskRoutes: FastifyPluginAsync<TaskRoutesOptions> = async (app, { db }) => {
   app.post("/api/tasks", { config: { rateLimit: taskRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const input = taskInput.parse(request.body);
     if (input.projectId && !taskBelongsToOwner(db, input.projectId, owner)) {
       return reply.code(400).send({ error: "Project not found or archived" });
@@ -46,7 +46,7 @@ export const taskRoutes: FastifyPluginAsync<TaskRoutesOptions> = async (app, { d
   });
 
   app.patch<{ Params: { id: string } }>("/api/tasks/:id", { config: { rateLimit: taskRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const input = taskPatch.parse(request.body);
     const current = db.prepare("SELECT * FROM tasks WHERE id = ? AND profile_id=?").get(request.params.id, owner) as Record<string, unknown> | undefined;
     if (!current) return reply.code(404).send({ error: "Task not found" });
@@ -83,14 +83,14 @@ export const taskRoutes: FastifyPluginAsync<TaskRoutesOptions> = async (app, { d
   });
 
   app.delete<{ Params: { id: string } }>("/api/tasks/:id", { config: { rateLimit: taskRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const result = db.prepare("DELETE FROM tasks WHERE id=? AND profile_id=?").run(request.params.id, owner);
     if (!result.changes) return reply.code(404).send({ error: "Task not found" });
     return reply.code(204).send();
   });
 
   app.put("/api/tasks/reorder", { config: { rateLimit: taskRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const { order } = reorderInput.parse(request.body);
     const owned = new Set((db.prepare("SELECT id FROM tasks WHERE profile_id=?").all(owner) as Array<{ id: string }>).map((row) => row.id));
     const unique = [...new Set(order)].filter((id) => owned.has(id));
@@ -105,7 +105,7 @@ export const taskRoutes: FastifyPluginAsync<TaskRoutesOptions> = async (app, { d
   });
 
   app.post<{ Params: { action: string } }>("/api/tasks/actions/:action", { config: { rateLimit: taskRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const params = bulkActionParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "Unknown task action" });
     runTaskBulkAction(db, owner, params.data.action);

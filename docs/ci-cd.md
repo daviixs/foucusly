@@ -32,6 +32,7 @@ A API deve receber estas variáveis no Coolify:
 ```text
 HOST=0.0.0.0
 DATABASE_PATH=/app/data/foucusly.sqlite
+AUTH_SECRET=<gere com: openssl rand -hex 32>
 CORS_ORIGINS=https://app.seudominio.js.org
 ```
 

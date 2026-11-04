@@ -1,3 +1,4 @@
+import { authHeader } from "../auth-helper.js";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AppDatabase, createDatabase, createProfile, readSettings } from "../../src/db.js";
@@ -11,7 +12,7 @@ function put(body: unknown) {
   return app.inject({
     method: "PUT",
     url: "/api/settings",
-    headers: { "x-profile-id": owner, "content-type": "application/json" },
+    headers: { authorization: authHeader(owner), "content-type": "application/json" },
     payload: body as Record<string, unknown>,
   });
 }

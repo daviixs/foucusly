@@ -23,12 +23,12 @@ describe("CORS", () => {
     app = buildServer(createDatabase(":memory:"), { corsOrigins: ["https://daviixs.github.io"] });
     const response = await app.inject({
       method: "OPTIONS", url: "/api/tasks",
-      headers: { origin: "https://daviixs.github.io", "access-control-request-method": "PATCH", "access-control-request-headers": "content-type,x-profile-id" }
+      headers: { origin: "https://daviixs.github.io", "access-control-request-method": "PATCH", "access-control-request-headers": "content-type,authorization" }
     });
     expect(response.statusCode).toBe(204);
     expect(response.headers["access-control-allow-origin"]).toBe("https://daviixs.github.io");
     expect(String(response.headers["access-control-allow-methods"])).toContain("PATCH");
-    expect(String(response.headers["access-control-allow-headers"]).toLowerCase()).toContain("x-profile-id");
+    expect(String(response.headers["access-control-allow-headers"]).toLowerCase()).not.toContain("x-profile-id");
     expect(String(response.headers["access-control-allow-headers"]).toLowerCase()).toContain("authorization");
   });
 

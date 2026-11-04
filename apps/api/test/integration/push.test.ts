@@ -1,3 +1,4 @@
+import { authHeader } from "../auth-helper.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "../../src/server.js";
 import { createDatabase, createProfile, listPushSubscriptions, type AppDatabase } from "../../src/db.js";
@@ -20,7 +21,7 @@ let app: FastifyInstance;
 let owner: string;
 
 function send(method: string, path: string, body?: unknown, profileId = owner) {
-  const headers: Record<string, string> = { "x-profile-id": profileId };
+  const headers: Record<string, string> = { authorization: authHeader(profileId) };
   const init: Parameters<FastifyInstance["inject"]>[0] = { method, url: path, headers };
   if (body !== undefined) { headers["content-type"] = "application/json"; init.payload = body; }
   return app.inject(init);

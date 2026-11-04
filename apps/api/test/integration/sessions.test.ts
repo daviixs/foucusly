@@ -1,3 +1,4 @@
+import { authHeader } from "../auth-helper.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "../../src/server.js";
 import { createDatabase, createProfile, type AppDatabase } from "../../src/db.js";
@@ -10,7 +11,7 @@ let other: string;
 const UUID = (seed: string) => `${seed}-0000-4000-8000-000000000000`.slice(0, 36);
 
 function post(path: string, body: unknown, profileId = owner, method = "POST") {
-  const headers: Record<string, string> = { "x-profile-id": profileId };
+  const headers: Record<string, string> = { authorization: authHeader(profileId) };
   const init: Parameters<FastifyInstance["inject"]>[0] = { method, url: path, headers };
   if (body !== undefined) { headers["content-type"] = "application/json"; init.payload = body; }
   return app.inject(init);
@@ -51,7 +52,7 @@ describe("session history management", () => {  beforeEach(() => {
     const second = await post("/api/sessions", session);
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(200);
-    const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap", headers: { "x-profile-id": owner } });
+    const bootstrap = await app.inject({ method: "GET", url: "/api/bootstrap", headers: { authorization: authHeader(owner) } });
     const tasks = (bootstrap.json() as { tasks: Array<{ completedPomos: number }> }).tasks;
     expect(tasks[0].completedPomos).toBe(1);
   });
@@ -80,7 +81,7 @@ describe("session history management", () => {  beforeEach(() => {
     expect(deleted.statusCode).toBe(204);
     const repeat = await post(`/api/sessions/${created.id}`, undefined, owner, "DELETE");
     expect(repeat.statusCode).toBe(404);
-    const detail = await app.inject({ method: "GET", url: "/api/reports/detail?period=day", headers: { "x-profile-id": owner } });
+    const detail = await app.inject({ method: "GET", url: "/api/reports/detail?period=day", headers: { authorization: authHeader(owner) } });
     expect((detail.json() as { sessions: unknown[] }).sessions).toHaveLength(0);
   });
 
@@ -89,11 +90,11 @@ describe("session history management", () => {  beforeEach(() => {
     other = createProfile(db, "owner-b").id;
     const response = await post("/api/sessions/manual", { startedAt: iso(1200), endedAt: iso(0) });
     const created = (response.json() as { session?: { id: string } }).session;
-    const foreignGet = await app.inject({ method: "GET", url: "/api/reports/detail?period=day", headers: { "x-profile-id": other } });
+    const foreignGet = await app.inject({ method: "GET", url: "/api/reports/detail?period=day", headers: { authorization: authHeader(other) } });
     expect((foreignGet.json() as { sessions: unknown[] }).sessions).toHaveLength(0);
-    const foreignPatch = await app.inject({ method: "PATCH", url: `/api/sessions/${created?.id}`, headers: { "x-profile-id": other, "content-type": "application/json" }, payload: { taskTitle: "hijack" } });
+    const foreignPatch = await app.inject({ method: "PATCH", url: `/api/sessions/${created?.id}`, headers: { authorization: authHeader(other), "content-type": "application/json" }, payload: { taskTitle: "hijack" } });
     expect(foreignPatch.statusCode).toBe(404);
-    const foreignDelete = await app.inject({ method: "DELETE", url: `/api/sessions/${created?.id}`, headers: { "x-profile-id": other } });
+    const foreignDelete = await app.inject({ method: "DELETE", url: `/api/sessions/${created?.id}`, headers: { authorization: authHeader(other) } });
     expect(foreignDelete.statusCode).toBe(404);
   });
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwise, Keyboard, Trash, X } from "@phosphor-icons/react";
 import { ADVANCE_REMINDER_MIN_REMAINING_MS, DEFAULT_SETTINGS, NIGHT_ENDS_AT_HOUR, NIGHT_STARTS_AT_HOUR, advanceReminderCopy, durationForMode, isNightTime, type BootstrapData, type Profile, type Settings, type Task, type TaskBulkAction, type TimerMode, type TimerState } from "@foucusly/contracts";
-import { api } from "./api";
+import { api, getAuthToken, setAuthToken, setUnauthorizedHandler } from "./api";
 import { Header } from "./components/Header";
 import { ReportDialog } from "./components/ReportDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -12,7 +12,7 @@ import { TimerPanel } from "./components/TimerPanel";
 import { useAmbientTimerSync } from "./hooks/useAmbientSound";
 import { playAlarm } from "./audio/alarm";
 import { installAudioUnlock } from "./audio/engine";
-import { ProfileGate } from "./components/ProfileGate";
+import { AuthGate } from "./components/AuthGate";
 
 const msUntilNextDayNightSwitch = (date: Date) => {
   const next = new Date(date);
@@ -67,11 +67,9 @@ function notifyBeforeEnd(current: TimerState, reminderMinutes: number, remindedE
 export function App() {
   const isSimplePage = window.location.pathname.replace(/\/+$/, "") === `${import.meta.env.BASE_URL}app`;
   const [data, setData] = useState<BootstrapData | null>(null);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [restoringProfile, setRestoringProfile] = useState(() => Boolean(window.localStorage.getItem("foucusly-profile-id")));
-  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
-  const [profileCreateMode, setProfileCreateMode] = useState(false);
+  // With a saved token, show the loading screen (not the login form) until bootstrap validates it.
+  const [restoringProfile, setRestoringProfile] = useState(() => Boolean(getAuthToken()));
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
@@ -105,32 +103,43 @@ export function App() {
     return loaded;
   }, []);
 
-  const activateProfile = useCallback(async (next: Profile) => {
-    api.setActiveProfile(next.id);
-    window.localStorage.setItem("foucusly-profile-id", next.id);
-    setProfile(next);
+  const signOutLocally = useCallback(() => {
+    setAuthToken(null);
+    setProfile(null);
     setData(null);
     setTimer(null);
-    try { await loadData(); }
-    catch (error) { setLoadingError((error as Error).message); }
+    setLoadingError("");
+  }, []);
+
+  useEffect(() => {
+    // Any 401 (expired/invalid token) drops back to the sign-in form.
+    setUnauthorizedHandler(signOutLocally);
+    return () => setUnauthorizedHandler(null);
+  }, [signOutLocally]);
+
+  const startSession = useCallback(async () => {
+    setData(null);
+    setTimer(null);
+    try {
+      const loaded = await loadData();
+      setProfile(loaded.profile);
+    } catch (error) {
+      if (getAuthToken()) setLoadingError((error as Error).message);
+    }
   }, [loadData]);
 
   const restoreProfile = useCallback(async (isCancelled: () => boolean = () => false) => {
+    if (!getAuthToken()) { setRestoringProfile(false); return; }
     try {
-      const available = await api.profiles();
-      if (isCancelled()) return;
-      setProfiles(available);
-      const savedId = window.localStorage.getItem("foucusly-profile-id");
-      const savedProfile = available.find((item) => item.id === savedId);
-      if (savedProfile) await activateProfile(savedProfile);
-      else if (savedId) window.localStorage.removeItem("foucusly-profile-id");
+      const loaded = await loadData();
+      if (!isCancelled()) setProfile(loaded.profile);
     } catch (error) {
-      // Network/API failure: keep the saved profile id and show retry instead of the profile screen.
-      if (!isCancelled()) setLoadingError((error as Error).message);
+      // 401 already cleared the token; other failures keep it and show retry.
+      if (!isCancelled() && getAuthToken()) setLoadingError((error as Error).message);
     } finally {
       if (!isCancelled()) setRestoringProfile(false);
     }
-  }, [activateProfile]);
+  }, [loadData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,38 +147,22 @@ export function App() {
     return () => { cancelled = true; };
   }, [restoreProfile]);
 
-  const createLocalProfile = async (username: string) => {
-    const created = await api.createProfile(username);
-    const available = await api.profiles();
-    setProfiles(available);
-    setProfileDialogOpen(false);
-    setProfileCreateMode(false);
-    await activateProfile(created);
-    notify(`Profile “${created.username}” created.`);
+  const authenticate = async (mode: "login" | "register", username: string, password: string) => {
+    const result = mode === "register" ? await api.register(username, password) : await api.login(username, password);
+    setAuthToken(result.token);
+    await startSession();
+    notify(mode === "register" ? `Account “${result.profile.username}” created.` : `Signed in as “${result.profile.username}”.`);
   };
 
   const handleDeleteAccount = async () => {
     if (!profile || deleting) return;
     setDeleting(true);
     try {
-      const deletedId = profile.id;
       const deletedName = profile.username;
-      await api.deleteProfile(deletedId);
-      window.localStorage.removeItem("foucusly-profile-id");
-      const remaining = await api.profiles();
-      setProfiles(remaining);
+      await api.deleteProfile(profile.id);
       setDeleteDialogOpen(false);
-      if (remaining.length > 0) {
-        await activateProfile(remaining[0]);
-        notify(`Account “${deletedName}” deleted.`);
-      } else {
-        setProfile(null);
-        setData(null);
-        setTimer(null);
-        setProfileCreateMode(true);
-        setProfileDialogOpen(true);
-        notify(`Account “${deletedName}” deleted.`);
-      }
+      signOutLocally();
+      notify(`Account “${deletedName}” deleted.`);
     } catch (err) {
       notify(`Could not delete account: ${(err as Error).message}`);
     } finally {
@@ -178,13 +171,8 @@ export function App() {
   };
 
   const handleLogout = () => {
-    window.localStorage.removeItem("foucusly-profile-id");
     const previousName = profile?.username;
-    setProfile(null);
-    setData(null);
-    setTimer(null);
-    setProfileCreateMode(false);
-    setProfileDialogOpen(true);
+    signOutLocally();
     if (previousName) notify(`Logged out from “${previousName}”.`);
   };
   useEffect(() => { timerRef.current = timer; }, [timer]);
@@ -304,15 +292,11 @@ export function App() {
         setDialog(null);
         setDeleteDialogOpen(false);
         setShortcutsDialogOpen(false);
-        if (profile) {
-          setProfileDialogOpen(false);
-          setProfileCreateMode(false);
-        }
       }
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [profile, toggleTimer]);
+  }, [toggleTimer]);
   const seconds = useMemo(() => timer?.running && timer.endsAt !== null
     ? Math.max(0, Math.ceil((timer.endsAt - now) / 1000))
     : timer?.remainingSeconds ?? 0, [timer, now]);
@@ -354,7 +338,7 @@ export function App() {
   };
   const setActiveTask = (id: string) => { if (timer) void persistTimer({ ...timer, activeTaskId: id }); };
 
-  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else { setRestoringProfile(Boolean(window.localStorage.getItem("foucusly-profile-id"))); void restoreProfile(); } }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
+  if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); setRestoringProfile(Boolean(getAuthToken())); void restoreProfile(); }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
   if (restoringProfile || (profile && (!data || !timer))) return <main className="loading-state"><div className="loading-spinner" /><span>Preparing your focus space…</span></main>;
 
   const shownData = data ?? { tasks: [], projects: [], settings: DEFAULT_SETTINGS };
@@ -372,19 +356,12 @@ export function App() {
       <div className="app-container">
         <Header
           profile={profile}
-          onAccount={() => {
-            setProfileCreateMode(false);
-            setProfileDialogOpen(true);
-          }}
           onLogout={handleLogout}
           onShortcuts={() => setShortcutsDialogOpen(true)}
           onDeleteAccount={() => setDeleteDialogOpen(true)}
           onReport={() => setDialog("report")}
           onSettings={() => setDialog("settings")}
-          onSignIn={() => {
-            setProfileCreateMode(profiles.length === 0);
-            setProfileDialogOpen(true);
-          }}
+          onSignIn={() => undefined}
         />
         <main className="focus-main">
           <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} longBreakInterval={shownData.settings.longBreakInterval} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} onSkip={() => { void skipSession(); }} durationSeconds={durationForMode(shownData.settings, shownTimer.mode)} onEditMinutes={editModeMinutes} />
@@ -395,23 +372,7 @@ export function App() {
     {isSimplePage && <div className="app-bottom-link"><a href={import.meta.env.BASE_URL}>FULL PAGE</a></div>}
     {dialog === "settings" && data && <SettingsDialog initial={data.settings} onSave={saveSettings} onClose={() => setDialog(null)} onToast={notify} />}
     {dialog === "report" && <ReportDialog onClose={() => setDialog(null)} />}
-    {(!profile || profileDialogOpen) && (
-      <ProfileGate
-        profiles={profiles}
-        activeProfileId={profile?.id ?? null}
-        initialCreating={profileCreateMode || profiles.length === 0}
-        onSelect={(selected) => {
-          setProfileDialogOpen(false);
-          setProfileCreateMode(false);
-          void activateProfile(selected);
-        }}
-        onCreate={createLocalProfile}
-        onClose={profile ? () => {
-          setProfileDialogOpen(false);
-          setProfileCreateMode(false);
-        } : undefined}
-      />
-    )}
+    {!profile && !restoringProfile && <AuthGate onSubmit={authenticate} />}
     {deleteDialogOpen && profile && (
       <div
         className="dialog-backdrop"

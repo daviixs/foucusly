@@ -1,6 +1,19 @@
 import type { BootstrapData, DetailedSession, Profile, Project, RankingBy, RankingEntry, ReportData, ReportPeriod, Settings, Task, TaskBulkAction, TimerState, WebhookTestResult } from "@foucusly/contracts";
 
-let activeProfileId = "";
+const TOKEN_KEY = "focusly-token";
+let authToken: string | null = typeof window !== "undefined" ? window.localStorage.getItem(TOKEN_KEY) : null;
+let onUnauthorized: (() => void) | null = null;
+
+export function getAuthToken(): string | null { return authToken; }
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+  if (token) window.localStorage.setItem(TOKEN_KEY, token);
+  else window.localStorage.removeItem(TOKEN_KEY);
+}
+/** Called when the API answers 401 for an authenticated request (expired/invalid token). */
+export function setUnauthorizedHandler(handler: (() => void) | null): void { onUnauthorized = handler; }
+
+export interface AuthResult { token: string; profile: Profile }
 /** Base URL of the API. Empty string = same origin (dev uses the Vite proxy for /api). */
 export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/+$/, "");
 
@@ -9,12 +22,16 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}/api${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-async function request<T>(path: string, init?: RequestInit, profileScoped = true): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
   const response = await fetch(apiUrl(path), {
     ...init,
     // Fastify rejects an empty body declared as JSON, so bodiless POST/DELETE calls must omit the header.
-    headers: { ...(init?.body !== undefined ? { "content-type": "application/json" } : {}), ...(profileScoped && activeProfileId ? { "x-profile-id": activeProfileId } : {}), ...init?.headers }
+    headers: { ...(init?.body !== undefined ? { "content-type": "application/json" } : {}), ...(authenticated && authToken ? { authorization: `Bearer ${authToken}` } : {}), ...init?.headers }
   });
+  if (response.status === 401 && authenticated) {
+    setAuthToken(null);
+    onUnauthorized?.();
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(body?.error ?? `Request failed (${response.status})`);
@@ -24,10 +41,9 @@ async function request<T>(path: string, init?: RequestInit, profileScoped = true
 }
 
 export const api = {
-  setActiveProfile: (id: string) => { activeProfileId = id; },
-  profiles: () => request<Profile[]>("/profiles", undefined, false),
-  createProfile: (username: string) => request<Profile>("/profiles", { method: "POST", body: JSON.stringify({ username }) }, false),
-  deleteProfile: (id: string) => request<void>(`/profiles/${id}`, { method: "DELETE", headers: { "x-profile-id": id } }, false),
+  login: (username: string, password: string) => request<AuthResult>("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }, false),
+  register: (username: string, password: string) => request<AuthResult>("/auth/register", { method: "POST", body: JSON.stringify({ username, password }) }, false),
+  deleteProfile: (id: string) => request<void>(`/profiles/${id}`, { method: "DELETE" }),
   bootstrap: () => request<BootstrapData>("/bootstrap"),
   saveSettings: (settings: Settings) => request<Settings>("/settings", { method: "PUT", body: JSON.stringify(settings) }),
   saveTimer: (timer: TimerState) => request<TimerState>("/timer", { method: "PUT", body: JSON.stringify(timer) }),

@@ -12,13 +12,13 @@ const projectRateLimit = { max: 60, timeWindow: "1 minute" };
 
 export const projectRoutes: FastifyPluginAsync<ProjectRoutesOptions> = async (app, { db }) => {
   app.get("/api/projects", async (request) => db.prepare(`SELECT id, name, created_at AS createdAt, archived_at AS archivedAt, color
-    FROM projects WHERE profile_id=? AND archived_at IS NULL ORDER BY name COLLATE NOCASE`).all(request.headers["x-profile-id"]));
+    FROM projects WHERE profile_id=? AND archived_at IS NULL ORDER BY name COLLATE NOCASE`).all(request.profileId));
 
   app.get("/api/projects/archived", async (request) => db.prepare(`SELECT id, name, created_at AS createdAt, archived_at AS archivedAt, color
-    FROM projects WHERE profile_id=? AND archived_at IS NOT NULL ORDER BY archived_at DESC`).all(request.headers["x-profile-id"]));
+    FROM projects WHERE profile_id=? AND archived_at IS NOT NULL ORDER BY archived_at DESC`).all(request.profileId));
 
   app.post("/api/projects", { config: { rateLimit: projectRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const input = createProjectInput.parse(request.body);
     const duplicate = db.prepare("SELECT id FROM projects WHERE profile_id=? AND archived_at IS NULL AND name = ? COLLATE NOCASE").get(owner, input.name);
     if (duplicate) return reply.code(409).send({ error: "A project with this name already exists" });
@@ -30,7 +30,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRoutesOptions> = async (ap
   });
 
   app.patch<{ Params: { id: string } }>("/api/projects/:id", { config: { rateLimit: projectRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const input = updateProjectInput.parse(request.body);
     const current = db.prepare("SELECT * FROM projects WHERE id=? AND profile_id=? AND archived_at IS NULL").get(request.params.id, owner) as Record<string, unknown> | undefined;
     if (!current) return reply.code(404).send({ error: "Project not found" });
@@ -43,7 +43,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRoutesOptions> = async (ap
   });
 
   app.post<{ Params: { id: string } }>("/api/projects/:id/restore", { config: { rateLimit: projectRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const current = db.prepare("SELECT id, name FROM projects WHERE id=? AND profile_id=? AND archived_at IS NOT NULL").get(request.params.id, owner) as { id: string; name: string } | undefined;
     if (!current) return reply.code(404).send({ error: "Archived project not found" });
     const duplicate = db.prepare("SELECT id FROM projects WHERE profile_id=? AND archived_at IS NULL AND name = ? COLLATE NOCASE AND id != ?").get(owner, current.name, request.params.id);
@@ -54,7 +54,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRoutesOptions> = async (ap
   });
 
   app.delete<{ Params: { id: string } }>("/api/projects/:id", { config: { rateLimit: projectRateLimit } }, async (request, reply) => {
-    const owner = request.headers["x-profile-id"] as string;
+    const owner = request.profileId;
     const archivedAt = new Date().toISOString();
     const archive = db.transaction(() => {
       const result = db.prepare("UPDATE projects SET archived_at=? WHERE id=? AND profile_id=? AND archived_at IS NULL").run(archivedAt, request.params.id, owner);
