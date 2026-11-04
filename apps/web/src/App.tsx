@@ -347,13 +347,13 @@ export function App() {
 
   const shownData = data ?? { tasks: [], projects: [], settings: DEFAULT_SETTINGS };
   const shownTimer = timer ?? freshTimer(DEFAULT_SETTINGS, "pomodoro", null, 0);
-  const shellTheme = shownData.settings.themeColor ?? "red";
   const darkTheme = Boolean(
+    shownData.settings.appearance === "dark" ||
     (shownData.settings.darkModeWhenRunning && shownTimer.running) ||
     (shownData.settings.autoDarkAtNight && isNight)
   );
 
-  return <div className={`app-shell theme-${shellTheme} ${darkTheme ? "dark-running" : ""}`}>
+  return <div className={`app-shell ${darkTheme ? "dark-running" : ""}`}>
     <div className="focus-area">
       {darkTheme && <DarkStarfield />}
       <CloudBackdrop dark={darkTheme} />

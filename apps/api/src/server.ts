@@ -22,7 +22,7 @@ const settingsInput = z.object({
   autoStartBreaks: z.boolean(), autoStartPomodoros: z.boolean(), autoCheckTasks: z.boolean(), checkToBottom: z.boolean(),
   alarmSound: z.string().min(1).max(40), alarmVolume: z.number().int().min(0).max(100), alarmRepeat: z.number().int().min(1).max(5),
   focusSound: z.string().min(1).max(40), focusVolume: z.number().int().min(0).max(100),
-  themeColor: z.enum(["red", "teal", "blue", "green", "purple"]), hourFormat: z.enum(["12-hour", "24-hour"]),
+  appearance: z.enum(["light", "dark"]).optional(), hourFormat: z.enum(["12-hour", "24-hour"]),
   darkModeWhenRunning: z.boolean(), autoDarkAtNight: z.boolean(), notificationReminderMinutes: z.number().int().min(0).max(120),
   weekStartsOn: z.union([z.literal(0), z.literal(1)]),
   webhookUrl: z.string().trim().max(2000).optional(),
@@ -91,6 +91,7 @@ export function buildServer(db: AppDatabase, options: ServerOptions = {}): Fasti
     const next: Settings = normalizeSettings({
       ...current,
       ...input,
+      appearance: input.appearance ?? current.appearance,
       webhookUrl: input.webhookUrl ?? current.webhookUrl,
       webhookSecret: input.webhookSecret ?? current.webhookSecret,
       webhookToken: input.webhookToken ?? current.webhookToken,
