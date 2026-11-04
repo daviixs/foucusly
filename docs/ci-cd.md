@@ -34,7 +34,13 @@ HOST=0.0.0.0
 DATABASE_PATH=/app/data/foucusly.sqlite
 AUTH_SECRET=<gere com: openssl rand -hex 32>
 CORS_ORIGINS=https://app.seudominio.js.org
+# Opcionais (padrões mostrados). TRUST_PROXY vazio = true em produção.
+SIGNUP_LIMIT_PER_IP=1
+SIGNUP_WINDOW_HOURS=24
+TURNSTILE_SECRET_KEY=<opcional: secret key do Cloudflare Turnstile>
 ```
+
+Para o captcha no frontend, defina a variável de repositório `VITE_TURNSTILE_SITE_KEY` (Settings → Variables); o workflow do Pages a injeta no build.
 
 Crie um armazenamento persistente no recurso da API para `/app/data`. Não monte banco de dados no recurso web e não deixe o arquivo SQLite apenas na camada da imagem.
 
