@@ -1,15 +1,23 @@
 import { getAudioContext, resumeAudio } from "./engine";
+import { startScene } from "./soundscapes";
+import { volumeToGain } from "./volume";
 
 export type NoiseType = "white" | "pink" | "brown";
+export type SceneType = "rain" | "cafe" | "forest";
+export type AmbientSoundType = NoiseType | SceneType;
 
 const BUFFER_SECONDS = 2;
+/** Samples cross-faded from the tail into the head so the loop point has no click (matters for brown). */
+const LOOP_FADE_SAMPLES = 4096;
 const RAMP_SECONDS = 0.08;
+/** Output gain at slider 100, per sound, so every option peaks at a similar loudness. */
+const MAX_GAIN: Record<AmbientSoundType, number> = { white: 0.35, pink: 0.5, brown: 0.8, rain: 0.9, cafe: 1, forest: 1 };
 
 const cache = new Map<NoiseType, AudioBuffer>();
-let source: AudioBufferSourceNode | null = null;
 let gain: GainNode | null = null;
-let currentType: NoiseType | null = null;
-let volume = 0.5;
+let stopCurrent: (() => void) | null = null;
+let currentType: AmbientSoundType | null = null;
+let volume = 50;
 
 /** Fills `out` with noise samples in [-1, 1]. Exported for tests. */
 export function fillNoise(type: NoiseType, out: Float32Array, random: () => number = Math.random): Float32Array {
@@ -45,11 +53,20 @@ export function fillNoise(type: NoiseType, out: Float32Array, random: () => numb
   return out;
 }
 
-function bufferFor(ctx: AudioContext, type: NoiseType): AudioBuffer {
+/** Returns a cached, seamlessly looping mono noise buffer (2 s, shared by every sound). */
+export function noiseBuffer(ctx: BaseAudioContext, type: NoiseType): AudioBuffer {
   const cached = cache.get(type);
   if (cached && cached.sampleRate === ctx.sampleRate) return cached;
-  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * BUFFER_SECONDS), ctx.sampleRate);
-  fillNoise(type, buffer.getChannelData(0));
+  const length = Math.floor(ctx.sampleRate * BUFFER_SECONDS);
+  const raw = fillNoise(type, new Float32Array(length + LOOP_FADE_SAMPLES));
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  data.set(raw.subarray(0, length));
+  // The head blends from the samples that would follow the tail, so sample length-1 flows into sample 0.
+  for (let i = 0; i < LOOP_FADE_SAMPLES; i++) {
+    const t = i / LOOP_FADE_SAMPLES;
+    data[i] = raw[i] * t + raw[length + i] * (1 - t);
+  }
   cache.set(type, buffer);
   return buffer;
 }
@@ -62,35 +79,42 @@ function ramp(node: GainNode, ctx: AudioContext, target: number) {
 }
 
 function release(ctx: AudioContext) {
-  if (!source || !gain) return;
-  const oldSource = source;
+  if (!gain || !stopCurrent) return;
   const oldGain = gain;
+  const oldStop = stopCurrent;
   ramp(oldGain, ctx, 0);
-  try { oldSource.stop(ctx.currentTime + RAMP_SECONDS + 0.02); } catch { /* already stopped */ }
-  oldSource.onended = () => oldGain.disconnect();
-  source = null;
+  window.setTimeout(() => { oldStop(); oldGain.disconnect(); }, (RAMP_SECONDS + 0.05) * 1000);
   gain = null;
+  stopCurrent = null;
   currentType = null;
 }
 
-/** Starts looping the given noise; replaces any noise already playing. */
-export async function play(type: NoiseType): Promise<void> {
+function targetGain(type: AmbientSoundType) {
+  return volumeToGain(volume, MAX_GAIN[type]);
+}
+
+/** Starts looping the given sound; replaces any sound already playing. */
+export async function play(type: AmbientSoundType): Promise<void> {
   const ctx = await resumeAudio();
   if (!ctx) return;
-  if (currentType === type && source) return;
+  if (currentType === type && gain) return;
   release(ctx);
   const node = ctx.createGain();
   node.gain.value = 0;
   node.connect(ctx.destination);
-  const src = ctx.createBufferSource();
-  src.buffer = bufferFor(ctx, type);
-  src.loop = true;
-  src.connect(node);
-  src.start();
-  source = src;
+  if (type === "white" || type === "pink" || type === "brown") {
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(ctx, type);
+    src.loop = true;
+    src.connect(node);
+    src.start();
+    stopCurrent = () => { try { src.stop(); } catch { /* already stopped */ } src.disconnect(); };
+  } else {
+    stopCurrent = startScene(ctx, type, node);
+  }
   gain = node;
   currentType = type;
-  ramp(node, ctx, volume);
+  ramp(node, ctx, targetGain(type));
 }
 
 export function stop(): void {
@@ -98,13 +122,13 @@ export function stop(): void {
   if (ctx) release(ctx);
 }
 
-/** Sets volume in [0, 1]. */
+/** Sets the 0-100 slider volume; mapped through a perceptual (dB) curve. */
 export function setVolume(value: number): void {
-  volume = Math.min(1, Math.max(0, value));
+  volume = Math.min(100, Math.max(0, value));
   const ctx = getAudioContext();
-  if (ctx && gain) ramp(gain, ctx, volume);
+  if (ctx && gain && currentType) ramp(gain, ctx, targetGain(currentType));
 }
 
-export function playingType(): NoiseType | null {
+export function playingType(): AmbientSoundType | null {
   return currentType;
 }

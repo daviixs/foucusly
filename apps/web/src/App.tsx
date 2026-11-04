@@ -12,7 +12,6 @@ import { TimerPanel } from "./components/TimerPanel";
 import { useAmbientTimerSync } from "./hooks/useAmbientSound";
 import { playAlarm } from "./audio/alarm";
 import { installAudioUnlock } from "./audio/engine";
-import { startFocusSound } from "./audio/focusSound";
 import { ProfileGate } from "./components/ProfileGate";
 
 const msUntilNextDayNightSwitch = (date: Date) => {
@@ -197,12 +196,7 @@ export function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!timer?.running || !data) return;
-    return startFocusSound(data.settings.focusSound, data.settings.focusVolume);
-  }, [timer?.running, data?.settings.focusSound, data?.settings.focusVolume]);
-
-  useAmbientTimerSync(profile?.id, Boolean(timer?.running && timer.mode === "pomodoro"));
+  useAmbientTimerSync(profile?.id, Boolean(timer?.running && timer.mode === "pomodoro"), data?.settings);
 
   const persistTimer = useCallback(async (next: TimerState) => {
     setTimer(next);
