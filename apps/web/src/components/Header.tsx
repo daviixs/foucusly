@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ChartLineUp,
-  Crown,
   GearSix,
   Keyboard,
   SignIn,
@@ -15,7 +14,6 @@ import logo from "../assets/logo.png";
 interface HeaderProps {
   profile: Profile | null;
   onAccount: () => void;
-  onPremium: () => void;
   onLogout: () => void;
   onShortcuts: () => void;
   onDeleteAccount: () => void;
@@ -27,7 +25,6 @@ interface HeaderProps {
 export function Header({
   profile,
   onAccount,
-  onPremium,
   onLogout,
   onShortcuts,
   onDeleteAccount,
@@ -114,18 +111,6 @@ export function Header({
                   className="profile-menu-item"
                   onClick={() => {
                     setProfileMenuOpen(false);
-                    onPremium();
-                  }}
-                >
-                  <Crown size={17} weight="fill" />
-                  <span>Premium</span>
-                </button>
-
-                <button
-                  role="menuitem"
-                  className="profile-menu-item"
-                  onClick={() => {
-                    setProfileMenuOpen(false);
                     onLogout();
                   }}
                 >
@@ -202,14 +187,6 @@ export function Header({
                     }}
                   >
                     <User size={16} weight="fill" /> Account
-                  </button>
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onPremium();
-                    }}
-                  >
-                    <Crown size={16} weight="fill" /> Premium
                   </button>
                   <button
                     onClick={() => {
