@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ChartLineUp,
-  CheckCircle,
   Crown,
   GearSix,
   Keyboard,
@@ -11,6 +10,7 @@ import {
   User
 } from "@phosphor-icons/react";
 import type { Profile } from "@foucusly/contracts";
+import logo from "../assets/logo.png";
 
 interface HeaderProps {
   profile: Profile | null;
@@ -70,7 +70,7 @@ export function Header({
     <header className="topbar">
       <a className="brand" href={import.meta.env.BASE_URL} aria-label="Foucusly home">
         <span className="brand-mark">
-          <CheckCircle size={21} weight="fill" />
+          <img src={logo} alt="" width={24} height={24} style={{ borderRadius: 4 }} />
         </span>
         <span>Foucusly</span>
       </a>
