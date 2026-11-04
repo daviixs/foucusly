@@ -97,8 +97,8 @@ export function ProjectManagerDialog({ projects, onCreate, onRename, onUpdateCol
       <div className="project-manager-content">
         <form className="project-create-form" onSubmit={(event) => void create(event)}>
           <input aria-label="New project name" maxLength={80} value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Project name" />
-          <ColorSwatches value={newColor} onSelect={setNewColor} />
           <button className="button-dark" disabled={!newName.trim() || busy}><Plus size={15} /> Add</button>
+          <div className="project-create-colors"><ColorSwatches value={newColor} onSelect={setNewColor} /></div>
         </form>
         {error && <p className="project-error" role="alert">{error}</p>}
         {projects.length ? <ul className="project-manager-list">{projects.map((project) => <li key={project.id}>
@@ -115,7 +115,7 @@ export function ProjectManagerDialog({ projects, onCreate, onRename, onUpdateCol
         <button className="archived-toggle" aria-expanded={archivedOpen} onClick={loadArchived}><Archive size={14} /> {archivedOpen ? "Hide archived projects" : "Archived projects"}</button>
         {archivedOpen && <ul className="project-manager-list archived-list">
           {archived.length ? archived.map((project) => <li key={project.id} className="archived-project-row">
-            <span><i className="project-dot" style={{ background: project.color ?? "#9aa3ad" }} />{project.name}<small>archived {new Date(project.archivedAt ?? "").toLocaleDateString()}</small></span>
+            <span><i className="project-dot" style={{ background: project.color ?? "#9aa3ad" }} /><span className="archived-project-name">{project.name}</span><small>archived {new Date(project.archivedAt ?? "").toLocaleDateString()}</small></span>
             <div><button aria-label={`Restore ${project.name}`} title="Restore" onClick={() => void restore(project)}><ArrowCounterClockwise size={16} /> Restore</button></div>
           </li>) : <p className="project-empty">No archived projects.</p>}
         </ul>}
