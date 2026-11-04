@@ -45,8 +45,22 @@ const THEME_COLORS: Array<{ id: ThemeColor; label: string; swatch: string }> = [
 ];
 
 function NumberSetting({ label, value, min = 0, max = 180, suffix, onChange }: { label: string; value: number; min?: number; max?: number; suffix?: string; onChange: (value: number) => void }) {
-  return <label className="number-setting"><span>{label}</span><span className="number-control"><input aria-label={label} type="number" min={min} max={max} value={value} onChange={(event) => onChange(Math.min(max, Math.max(min, Number(event.target.value) || min)))} />{suffix && <small>{suffix}</small>}</span></label>;
+  // Keep the raw text while typing so the field can be cleared; clamp only on blur.
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = Number(draft);
+    if (draft.trim() !== "" && Number.isFinite(parsed)) onChange(Math.min(max, Math.max(min, Math.round(parsed))));
+    setDraft(null);
+  };
+  return <label className="number-setting"><span>{label}</span><span className="number-control"><input aria-label={label} type="number" min={min} max={max} value={draft ?? value} onChange={(event) => {
+    const text = event.target.value;
+    setDraft(text);
+    const parsed = Number(text);
+    if (text.trim() !== "" && Number.isInteger(parsed) && parsed >= min && parsed <= max) onChange(parsed);
+  }} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") commit(); }} />{suffix && <small>{suffix}</small>}</span></label>;
 }
+
 
 function ToggleSetting({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return <label className="toggle-setting"><span>{label}</span><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><i aria-hidden="true" /></label>;
