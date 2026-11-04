@@ -1,5 +1,6 @@
 export type TimerMode = "pomodoro" | "shortBreak" | "longBreak";
-export type ThemeColor = "red" | "teal" | "blue" | "green" | "purple";
+export type Appearance = "light" | "dark";
+export const APPEARANCES: readonly Appearance[] = ["light", "dark"];
 export type ReportPeriod = "day" | "week" | "month" | "year";
 
 export const WEBHOOK_EVENTS = ["session.finished", "task.completed"] as const;
@@ -50,7 +51,8 @@ export interface Settings {
   alarmRepeat: number;
   focusSound: string;
   focusVolume: number;
-  themeColor: ThemeColor;
+  /** Light uses the sky/cloud look; dark uses the night sky. */
+  appearance: Appearance;
   hourFormat: "12-hour" | "24-hour";
   darkModeWhenRunning: boolean;
   autoDarkAtNight: boolean;
@@ -157,7 +159,7 @@ export const DEFAULT_SETTINGS: Settings = {
   alarmRepeat: 1,
   focusSound: "None",
   focusVolume: 50,
-  themeColor: "red",
+  appearance: "light",
   hourFormat: "24-hour",
   darkModeWhenRunning: false,
   autoDarkAtNight: false,
@@ -172,9 +174,12 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 /** Fills webhook defaults and drops removed keys so older settings JSON stays usable. */
-export function normalizeSettings(stored: Partial<Settings> & { tasksVisible?: unknown } = {}): Settings {
+export function normalizeSettings(stored: Partial<Settings> & { tasksVisible?: unknown; themeColor?: unknown } = {}): Settings {
   const {
     tasksVisible: _tasksVisible,
+    // Legacy color theme (red/teal/blue/green/purple) is dropped; those profiles fall back to light.
+    themeColor: _themeColor,
+    appearance,
     webhookEvents: rawEvents,
     webhookUrl,
     webhookSecret,
@@ -189,6 +194,7 @@ export function normalizeSettings(stored: Partial<Settings> & { tasksVisible?: u
   return {
     ...DEFAULT_SETTINGS,
     ...rest,
+    appearance: appearance === "dark" ? "dark" : "light",
     webhookUrl: typeof webhookUrl === "string" ? webhookUrl.trim() : "",
     webhookSecret: typeof webhookSecret === "string" ? webhookSecret.trim() : "",
     webhookToken: typeof webhookToken === "string" ? webhookToken.trim() : "",
