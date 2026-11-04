@@ -199,7 +199,8 @@ export function upsertPushSubscription(db: AppDatabase, profileId: string, endpo
   return { endpoint, profileId, subscription: JSON.parse(subscription) as unknown, createdAt };
 }
 
-export function deletePushSubscription(db: AppDatabase, endpoint: string): boolean {
+export function deletePushSubscription(db: AppDatabase, endpoint: string, profileId?: string): boolean {
+  if (profileId) return db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ? AND profile_id = ?").run(endpoint, profileId).changes > 0;
   return db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").run(endpoint).changes > 0;
 }
 

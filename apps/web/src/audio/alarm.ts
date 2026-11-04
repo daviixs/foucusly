@@ -1,5 +1,9 @@
 import type { Settings } from "@foucusly/contracts";
 import { resumeAudio } from "./engine";
+import { volumeToGain } from "./volume";
+
+/** Peak gain at volume 100; stays below 1 because the Bell partials stack. */
+const ALARM_MAX_GAIN = 0.7;
 
 type AlarmSettings = Pick<Settings, "alarmSound" | "alarmVolume" | "alarmRepeat">;
 /** Schedules one ring of a pattern starting at `at` and returns its length in seconds. */
@@ -50,7 +54,7 @@ export async function playAlarm({ alarmSound, alarmVolume, alarmRepeat }: AlarmS
   const ctx = await resumeAudio();
   if (!ctx || ctx.state !== "running") return false;
   const master = ctx.createGain();
-  master.gain.value = (alarmVolume / 100) * 0.6;
+  master.gain.value = volumeToGain(alarmVolume, ALARM_MAX_GAIN);
   master.connect(ctx.destination);
   let at = ctx.currentTime + 0.05;
   for (let ring = 0; ring < Math.max(1, alarmRepeat); ring++) at += pattern(ctx, master, at) + 0.35;

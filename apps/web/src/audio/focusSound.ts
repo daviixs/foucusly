@@ -1,4 +1,8 @@
 import { getAudioContext, resumeAudio } from "./engine";
+import { volumeToGain } from "./volume";
+
+/** Noise gain at volume 100 (was a fixed 0.1, too quiet for the slider to matter). */
+const FOCUS_MAX_GAIN = 0.35;
 
 /** Starts the ambient focus sound on the shared context and returns a function that stops it. */
 export function startFocusSound(sound: string, volume: number): () => void {
@@ -15,7 +19,7 @@ export function startFocusSound(sound: string, volume: number): () => void {
   filter.type = sound === "Cafe" ? "bandpass" : "lowpass";
   filter.frequency.value = sound === "Rain" ? 1900 : sound === "Cafe" ? 1250 : sound === "Forest" ? 1150 : 9500;
   filter.Q.value = sound === "Cafe" ? 0.65 : 0.7;
-  gain.gain.value = volume / 1000;
+  gain.gain.value = volumeToGain(volume, FOCUS_MAX_GAIN);
   source.connect(filter);
   filter.connect(gain);
   gain.connect(context.destination);
@@ -29,7 +33,7 @@ export function startFocusSound(sound: string, volume: number): () => void {
       oscillator.frequency.setValueAtTime(2100, context.currentTime);
       oscillator.frequency.exponentialRampToValueAtTime(1450, context.currentTime + 0.16);
       envelope.gain.setValueAtTime(0, context.currentTime);
-      envelope.gain.linearRampToValueAtTime(volume / 1600, context.currentTime + 0.025);
+      envelope.gain.linearRampToValueAtTime(volumeToGain(volume, FOCUS_MAX_GAIN) * 0.6, context.currentTime + 0.025);
       envelope.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.2);
       oscillator.connect(envelope);
       envelope.connect(context.destination);
