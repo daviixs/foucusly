@@ -335,6 +335,11 @@ export function App() {
     setData((current) => current ? { ...current, settings: saved } : current);
     if (timer && !timer.running) await persistTimer({ ...timer, remainingSeconds: durationForMode(saved, timer.mode) });
   };
+  const editModeMinutes = async (minutes: number) => {
+    if (!data || !timer || timer.running) return;
+    const key = timer.mode === "pomodoro" ? "pomodoroMinutes" : timer.mode === "shortBreak" ? "shortBreakMinutes" : "longBreakMinutes";
+    try { await saveSettings({ ...data.settings, [key]: minutes }); } catch (error) { notify(error instanceof Error ? error.message : "Couldn't save timer length"); }
+  };
   const setActiveTask = (id: string) => { if (timer) void persistTimer({ ...timer, activeTaskId: id }); };
 
   if (loadingError) return <main className="fatal-state"><div><div className="fatal-mark"><ArrowClockwise size={22} /></div><h1>Foucusly</h1><p>Can't connect to the local timer service.</p><code>{loadingError}</code><button className="button-dark" onClick={() => { setLoadingError(""); if (profile) void activateProfile(profile); else void api.profiles().then(setProfiles).catch((error: Error) => setLoadingError(error.message)); }}>Try again</button><small>Start both apps with <code>bun run dev</code>.</small></div></main>;
@@ -370,7 +375,7 @@ export function App() {
           }}
         />
         <main className="focus-main">
-          <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} longBreakInterval={shownData.settings.longBreakInterval} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} onSkip={() => { void skipSession(); }} />
+          <TimerPanel mode={shownTimer.mode} seconds={seconds} running={shownTimer.running} cyclePomos={shownTimer.cyclePomos} longBreakInterval={shownData.settings.longBreakInterval} taskTitle={shownData.tasks.find((task) => task.id === shownTimer.activeTaskId)?.title} onMode={selectMode} onToggle={toggleTimer} onSkip={() => { void skipSession(); }} durationSeconds={durationForMode(shownData.settings, shownTimer.mode)} onEditMinutes={editModeMinutes} />
           <TasksPanel tasks={shownData.tasks} projects={shownData.projects} activeTaskId={shownTimer.activeTaskId} hourFormat={shownData.settings.hourFormat} pomodoroMinutes={shownData.settings.pomodoroMinutes} onCreate={handleTaskCreate} onUpdate={handleTaskUpdate} onDelete={handleTaskDelete} onReorder={handleReorderTasks} onAction={handleAction} onSelect={setActiveTask} onToast={notify} onCreateProject={handleCreateProject} onRenameProject={handleRenameProject} onUpdateProjectColor={handleUpdateProjectColor} onArchiveProject={handleArchiveProject} onRestoreProject={handleRestoreProject} />
         </main>
       </div>
